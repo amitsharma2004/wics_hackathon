@@ -34,6 +34,9 @@ app.get('/', (req: Request, res: Response) => {
 
 app.use('/api/users', userRoutes);
 
+import rideRoutes from './modules/ride/ride.routes.js';
+app.use('/api/rides', rideRoutes);
+
 // Start server
 const startServer = async () => {
   try {
