@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { User } from './user.model.js';
 import { logger } from '../../config/logger.js';
+import { isAllowedEmailDomain, getAllowedDomains } from '../../utils/emailValidator.js';
 
 const generateTokens = (userId: string) => {
   const accessToken = jwt.sign({ id: userId }, process.env.JWT_SECRET as string, { expiresIn: '15m' });
@@ -12,6 +13,13 @@ const generateTokens = (userId: string) => {
 export const register = async (req: Request, res: Response) => {
   try {
     const { name, email, password } = req.body;
+
+    if (!isAllowedEmailDomain(email)) {
+      const allowedDomains = getAllowedDomains();
+      return res.status(403).json({ 
+        message: `Email domain not allowed. Please use an email from: ${allowedDomains.join(', ')}` 
+      });
+    }
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
