@@ -1,9 +1,14 @@
 import passport from 'passport';
 import { Strategy as LocalStrategy } from 'passport-local';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
-import { User, IUser } from '../modules/user/user.model.js';
+import { User } from '../modules/user/user.model.js';
 import { isAllowedEmailDomain } from '../utils/emailValidator.js';
+import { logger } from './logger.js';
+import dotenv from 'dotenv';
 
+dotenv.config();
+
+// Local Strategy
 passport.use(
   new LocalStrategy(
     { usernameField: 'email' },
@@ -27,12 +32,21 @@ passport.use(
   )
 );
 
+// Google OAuth Strategy
+const googleClientId = process.env.GOOGLE_CLIENT_ID;
+const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
+const googleCallbackUrl = process.env.GOOGLE_CALLBACK_URL;
+
+if (!googleClientId || !googleClientSecret || !googleCallbackUrl) {
+  throw new Error('Missing required Google OAuth environment variables: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_CALLBACK_URL');
+}
+
 passport.use(
   new GoogleStrategy(
     {
-      clientID: process.env.GOOGLE_CLIENT_ID as string,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
-      callbackURL: process.env.GOOGLE_CALLBACK_URL as string
+      clientID: googleClientId,
+      clientSecret: googleClientSecret,
+      callbackURL: googleCallbackUrl
     },
     async (accessToken, refreshToken, profile, done) => {
       try {
@@ -41,13 +55,10 @@ passport.use(
         if (!email) {
           return done(null, false, { message: 'No email found' });
         }
-
         if (!isAllowedEmailDomain(email)) {
           return done(null, false, { message: 'Email domain not allowed' });
         }
-
         let user = await User.findOne({ email });
-
         if (!user) {
           user = await User.create({
             name: profile.displayName,
@@ -59,7 +70,6 @@ passport.use(
           user.googleId = profile.id;
           await user.save();
         }
-
         return done(null, user);
       } catch (error) {
         return done(error as Error);
