@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import passport from 'passport';
-import { register, login, logout, getUser, updateProfile, refreshToken } from './user.controller.js';
+import { register, login, logout, getUser, updateProfile, refreshToken, updateUserLocation } from './user.controller.js';
 import { googleCallback, authFailure } from './oauth.controller.js';
 import { verifyToken } from '../../middleware/auth.middleware.js';
 import { validate } from '../../middleware/validate.middleware.js';
@@ -16,6 +16,7 @@ router.post('/logout', verifyToken, logout);
 router.get('/me', verifyToken, getUser);
 router.put('/profile', verifyToken, validate(updateProfileSchema), updateProfile);
 router.patch('/location-access', verifyToken, updateLocationAccess);
+router.patch('/location', verifyToken, updateUserLocation);
 
 // OAuth routes
 router.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));

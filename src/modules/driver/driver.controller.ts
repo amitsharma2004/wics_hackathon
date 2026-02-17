@@ -3,6 +3,7 @@ import { Driver } from './driver.model.js';
 import { User } from '../user/user.model.js';
 import { logger } from '../../config/logger.js';
 import { AuthRequest } from '../../middleware/auth.middleware.js';
+import redis from '../../config/redis.js';
 
 // Create new driver
 export const createDriver = async (req: Request, res: Response) => {
@@ -270,11 +271,15 @@ export const updateDriverStatus = async (req: Request, res: Response) => {
   }
 };
 
-// Update driver location
+// Update driver location (stores in Redis for real-time tracking)
 export const updateDriverLocation = async (req: Request, res: Response) => {
   try {
     const userId = (req as AuthRequest).userId;
-    const { coordinates } = req.body;
+    const { coordinates } = req.body; // [longitude, latitude]
+
+    if (!coordinates || coordinates.length !== 2) {
+      return res.status(400).json({ message: 'Valid coordinates [longitude, latitude] are required' });
+    }
 
     const driver = await Driver.findOne({ user: userId });
 
@@ -282,21 +287,55 @@ export const updateDriverLocation = async (req: Request, res: Response) => {
       return res.status(404).json({ message: 'Driver profile not found' });
     }
 
-    driver.currentLocation = {
-      type: 'Point',
-      coordinates
-    };
+    if (!driver.isVerified) {
+      return res.status(403).json({ message: 'Driver account is not verified' });
+    }
 
-    await driver.save();
+    // Store location in Redis with TTL (expires in 5 minutes if not updated)
+    const locationKey = `driver:location:${driver._id}`;
+    const locationData = JSON.stringify({
+      driverId: driver._id,
+      userId: userId,
+      coordinates: coordinates,
+      timestamp: new Date().toISOString(),
+      isOnline: driver.isOnline,
+      isAvailable: driver.isAvailable
+    });
 
-    res.json({ message: 'Location updated successfully' });
+    await redis.setex(locationKey, 300, locationData); // 5 minutes TTL
+
+    // Also add to Redis geospatial index for nearby driver queries
+    await redis.geoadd(
+      'drivers:locations',
+      coordinates[0], // longitude
+      coordinates[1], // latitude
+      driver._id.toString()
+    );
+
+    // Update MongoDB location less frequently (every 10th update or when status changes)
+    const updateCount = await redis.incr(`driver:update_count:${driver._id}`);
+    
+    if (updateCount % 10 === 0 || !driver.currentLocation) {
+      driver.currentLocation = {
+        type: 'Point',
+        coordinates
+      };
+      await driver.save();
+      await redis.del(`driver:update_count:${driver._id}`);
+    }
+
+    res.json({ 
+      message: 'Location updated successfully',
+      stored: 'redis',
+      ttl: 300
+    });
   } catch (error) {
     logger.error(`Update driver location error: ${error}`);
     res.status(500).json({ message: 'Failed to update location' });
   }
 };
 
-// Get nearby drivers
+// Get nearby drivers (uses Redis for real-time locations)
 export const getNearbyDrivers = async (req: Request, res: Response) => {
   try {
     const { longitude, latitude, maxDistance = 5000 } = req.query;
@@ -305,23 +344,57 @@ export const getNearbyDrivers = async (req: Request, res: Response) => {
       return res.status(400).json({ message: 'Longitude and latitude are required' });
     }
 
-    const drivers = await Driver.find({
-      isVerified: true,
-      isBlocked: false,
-      isOnline: true,
-      isAvailable: true,
-      currentLocation: {
-        $near: {
-          $geometry: {
-            type: 'Point',
-            coordinates: [parseFloat(longitude as string), parseFloat(latitude as string)]
-          },
-          $maxDistance: parseInt(maxDistance as string)
-        }
-      }
-    }).populate('user', 'name phoneNumber profileImageUrl');
+    const lng = parseFloat(longitude as string);
+    const lat = parseFloat(latitude as string);
+    const radius = parseInt(maxDistance as string);
 
-    res.json(drivers);
+    // Get nearby drivers from Redis geospatial index
+    const nearbyDriverIds = await redis.georadius(
+      'drivers:locations',
+      lng,
+      lat,
+      radius,
+      'm', // meters
+      'WITHDIST',
+      'ASC'
+    );
+
+    if (!nearbyDriverIds || nearbyDriverIds.length === 0) {
+      return res.json([]);
+    }
+
+    // Fetch driver details from Redis cache
+    const driversData = await Promise.all(
+      (nearbyDriverIds as Array<[string, string]>).map(async ([driverId, distance]) => {
+        const locationKey = `driver:location:${driverId}`;
+        const locationData = await redis.get(locationKey);
+        
+        if (!locationData) return null;
+
+        const location = JSON.parse(locationData);
+        
+        // Only return online and available drivers
+        if (!location.isOnline || !location.isAvailable) return null;
+
+        // Fetch driver details from MongoDB
+        const driver = await Driver.findById(driverId)
+          .populate('user', 'name phoneNumber profileImageUrl')
+          .select('isVerified isBlocked averageRating totalRides');
+
+        if (!driver || driver.isBlocked || !driver.isVerified) return null;
+
+        return {
+          driver,
+          distance: parseFloat(distance),
+          lastUpdate: location.timestamp
+        };
+      })
+    );
+
+    // Filter out null values and return
+    const validDrivers = driversData.filter(d => d !== null);
+
+    res.json(validDrivers);
   } catch (error) {
     logger.error(`Get nearby drivers error: ${error}`);
     res.status(500).json({ message: 'Failed to get nearby drivers' });
