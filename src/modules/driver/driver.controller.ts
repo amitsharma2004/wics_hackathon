@@ -4,6 +4,8 @@ import { User } from '../user/user.model.js';
 import { logger } from '../../config/logger.js';
 import { AuthRequest } from '../../middleware/auth.middleware.js';
 import redis from '../../config/redis.js';
+import { sendEmail, emailTemplates } from '../../config/nodemailer.js';
+import { getCell } from '../../config/h3.js';
 
 // Create new driver
 export const createDriver = async (req: Request, res: Response) => {
@@ -209,7 +211,7 @@ export const verifyDriver = async (req: Request, res: Response) => {
     const { id } = req.params;
     const { isVerified } = req.body;
 
-    const driver = await Driver.findById(id);
+    const driver = await Driver.findById(id).populate('user', 'name email');
 
     if (!driver) {
       return res.status(404).json({ message: 'Driver not found' });
@@ -217,6 +219,14 @@ export const verifyDriver = async (req: Request, res: Response) => {
 
     driver.isVerified = isVerified;
     await driver.save();
+
+    // Send verification email if driver is verified
+    if (isVerified && driver.user) {
+      const user = driver.user as any;
+      sendEmail(user.email, emailTemplates.driverVerified(user.name)).catch(error => {
+        logger.error(`Failed to send verification email to ${user.email}: ${error}`);
+      });
+    }
 
     logger.info(`Driver verification updated: ${driver._id} - Verified: ${isVerified}`);
     res.json({ 
@@ -291,12 +301,17 @@ export const updateDriverLocation = async (req: Request, res: Response) => {
       return res.status(403).json({ message: 'Driver account is not verified' });
     }
 
+    // Calculate H3 index for the location
+    const [longitude, latitude] = coordinates;
+    const h3Index = getCell(latitude, longitude);
+
     // Store location in Redis with TTL (expires in 5 minutes if not updated)
     const locationKey = `driver:location:${driver._id}`;
     const locationData = JSON.stringify({
       driverId: driver._id,
       userId: userId,
       coordinates: coordinates,
+      h3Index: h3Index,
       timestamp: new Date().toISOString(),
       isOnline: driver.isOnline,
       isAvailable: driver.isAvailable
@@ -312,6 +327,10 @@ export const updateDriverLocation = async (req: Request, res: Response) => {
       driver._id.toString()
     );
 
+    // Store in Redis H3 index set for efficient spatial queries
+    await redis.sadd(`h3:drivers:${h3Index}`, driver._id.toString());
+    await redis.expire(`h3:drivers:${h3Index}`, 300); // 5 minutes TTL
+
     // Update MongoDB location less frequently (every 10th update or when status changes)
     const updateCount = await redis.incr(`driver:update_count:${driver._id}`);
     
@@ -320,6 +339,7 @@ export const updateDriverLocation = async (req: Request, res: Response) => {
         type: 'Point',
         coordinates
       };
+      driver.h3Index = h3Index;
       await driver.save();
       await redis.del(`driver:update_count:${driver._id}`);
     }
@@ -327,6 +347,7 @@ export const updateDriverLocation = async (req: Request, res: Response) => {
     res.json({ 
       message: 'Location updated successfully',
       stored: 'redis',
+      h3Index: h3Index,
       ttl: 300
     });
   } catch (error) {
@@ -397,6 +418,146 @@ export const getNearbyDrivers = async (req: Request, res: Response) => {
     res.json(validDrivers);
   } catch (error) {
     logger.error(`Get nearby drivers error: ${error}`);
+    res.status(500).json({ message: 'Failed to get nearby drivers' });
+  }
+};
+
+
+// Get nearby drivers using H3 index (efficient spatial queries)
+export const getNearbyDriversByH3 = async (req: Request, res: Response) => {
+  try {
+    const { longitude, latitude } = req.query;
+
+    if (!longitude || !latitude) {
+      return res.status(400).json({ message: 'Longitude and latitude are required' });
+    }
+
+    const lng = parseFloat(longitude as string);
+    const lat = parseFloat(latitude as string);
+    const maxRadius = 5; // Maximum number of rings to search
+
+    // Get H3 index for the search location
+    const centerH3Index = getCell(lat, lng);
+    const h3 = await import('h3-js');
+
+    // Scan incrementally from radius 0 to maxRadius
+    for (let k = 0; k <= maxRadius; k++) {
+      logger.info(`Scanning H3 ring ${k} for nearby drivers`);
+      
+      // Get cells at current ring
+      const cellsAtRing = h3.default.gridDisk(centerH3Index, k);
+      
+      // Fetch drivers from cells at this ring
+      const driverIds = new Set<string>();
+      
+      for (const cell of cellsAtRing) {
+        const driversInCell = await redis.smembers(`h3:drivers:${cell}`);
+        driversInCell.forEach(id => driverIds.add(id));
+      }
+
+      if (driverIds.size === 0) {
+        logger.info(`No drivers found at ring ${k}, continuing to next ring`);
+        continue;
+      }
+
+      logger.info(`Found ${driverIds.size} potential drivers at ring ${k}`);
+
+      // Fetch driver details
+      const driversData = await Promise.all(
+        Array.from(driverIds).map(async (driverId) => {
+          const locationKey = `driver:location:${driverId}`;
+          const locationData = await redis.get(locationKey);
+          
+          if (!locationData) return null;
+
+          const location = JSON.parse(locationData);
+          
+          // Only return online and available drivers
+          if (!location.isOnline || !location.isAvailable) return null;
+
+          // Fetch driver details from MongoDB
+          const driver = await Driver.findById(driverId)
+            .populate('user', 'name phoneNumber profileImageUrl')
+            .select('isVerified isBlocked averageRating totalRides h3Index');
+
+          if (!driver || driver.isBlocked || !driver.isVerified) return null;
+
+          // Calculate straight-line distance
+          const [driverLng, driverLat] = location.coordinates;
+          const straightLineDistance = h3.default.greatCircleDistance(
+            [lat, lng],
+            [driverLat, driverLng],
+            'km'
+          );
+
+          // Calculate ETA using OSRM API
+          // TODO: Setup OSRM server locally for South Asia region for better performance and reliability
+          // Current implementation uses public OSRM server which may have rate limits
+          let eta = null;
+          let routeDistance = null;
+
+          try {
+            const osrmResponse = await fetch(
+              `https://router.project-osrm.org/route/v1/driving/${driverLng},${driverLat};${lng},${lat}?overview=false`
+            );
+            
+            if (osrmResponse.ok) {
+              const osrmData: any = await osrmResponse.json();
+              if (osrmData.code === 'Ok' && osrmData.routes && osrmData.routes.length > 0) {
+                const route = osrmData.routes[0];
+                eta = Math.round(route.duration / 60); // Convert seconds to minutes
+                routeDistance = Math.round(route.distance); // Distance in meters
+              }
+            }
+          } catch (osrmError) {
+            logger.warn(`OSRM API error for driver ${driverId}: ${osrmError}`);
+            // Fallback: Estimate ETA based on straight-line distance (assuming 30 km/h average speed)
+            eta = Math.round((straightLineDistance / 30) * 60);
+          }
+
+          return {
+            driver,
+            distance: straightLineDistance * 1000, // Convert to meters
+            routeDistance: routeDistance,
+            eta: eta, // ETA in minutes
+            h3Index: location.h3Index,
+            ringLevel: k,
+            lastUpdate: location.timestamp
+          };
+        })
+      );
+
+      // Filter out null values and sort by ETA (or distance if ETA not available)
+      const validDrivers = driversData
+        .filter(d => d !== null)
+        .sort((a, b) => {
+          // Sort by ETA first, then by distance
+          if (a!.eta && b!.eta) {
+            return a!.eta - b!.eta;
+          }
+          return a!.distance - b!.distance;
+        });
+
+      // If we found drivers at this ring, return them
+      if (validDrivers.length > 0) {
+        logger.info(`Returning ${ validDrivers.length } drivers from ring ${k}`);
+        return res.json({
+          drivers: validDrivers,
+          searchRadius: k,
+          totalCellsScanned: cellsAtRing.length
+        });
+      }
+    }
+
+    // No drivers found within maxRadius
+    logger.info(`No drivers found within ${maxRadius} rings`);
+    res.json({
+      drivers: [],
+      searchRadius: maxRadius,
+      message: 'No drivers available in your area'
+    });
+  } catch (error) {
+    logger.error(`Get nearby drivers by H3 error: ${error}`);
     res.status(500).json({ message: 'Failed to get nearby drivers' });
   }
 };

@@ -4,6 +4,51 @@ import { User } from './user.model.js';
 import { logger } from '../../config/logger.js';
 import { isAllowedEmailDomain, getAllowedDomains } from '../../utils/emailValidator.js';
 import { AuthRequest } from '../../middleware/auth.middleware.js';
+import redis from '../../config/redis.js';
+import { sendEmail, emailTemplates } from '../../config/nodemailer.js';
+
+const USER_CACHE_TTL = 900; // 15 minutes (same as access token)
+const USER_CACHE_PREFIX = 'user:';
+
+// Helper function to get user from cache or database
+const getUserFromCacheOrDB = async (userId: string) => {
+  try {
+    // Try to get from Redis cache first
+    const cacheKey = `${USER_CACHE_PREFIX}${userId}`;
+    const cachedUser = await redis.get(cacheKey);
+
+    if (cachedUser) {
+      logger.info(`User ${userId} fetched from Redis cache`);
+      return JSON.parse(cachedUser);
+    }
+
+    // If not in cache, fetch from database
+    const user = await User.findById(userId).select('-password -refreshToken').lean();
+    
+    if (user) {
+      // Store in Redis cache
+      await redis.setex(cacheKey, USER_CACHE_TTL, JSON.stringify(user));
+      logger.info(`User ${userId} fetched from database and cached in Redis`);
+    }
+
+    return user;
+  } catch (error) {
+    logger.error(`Error fetching user from cache/DB: ${error}`);
+    // Fallback to database if Redis fails
+    return await User.findById(userId).select('-password -refreshToken').lean();
+  }
+};
+
+// Helper function to invalidate user cache
+const invalidateUserCache = async (userId: string) => {
+  try {
+    const cacheKey = `${USER_CACHE_PREFIX}${userId}`;
+    await redis.del(cacheKey);
+    logger.info(`User cache invalidated for ${userId}`);
+  } catch (error) {
+    logger.error(`Error invalidating user cache: ${error}`);
+  }
+};
 
 const generateTokens = (userId: string) => {
   const accessToken = jwt.sign({ id: userId }, process.env.JWT_SECRET as string, { expiresIn: '15m' });
@@ -32,6 +77,17 @@ export const register = async (req: AuthRequest, res: Response) => {
 
     user.refreshToken = refreshToken;
     await user.save();
+
+    // Cache user data in Redis
+    const userCache = await User.findById(user._id).select('-password -refreshToken').lean();
+    if (userCache) {
+      await redis.setex(`${USER_CACHE_PREFIX}${user._id}`, USER_CACHE_TTL, JSON.stringify(userCache));
+    }
+
+    // Send welcome email (non-blocking)
+    sendEmail(email, emailTemplates.welcome(name)).catch(error => {
+      logger.error(`Failed to send welcome email to ${email}: ${error}`);
+    });
 
     // Set tokens in cookies
     res.cookie('accessToken', accessToken, {
@@ -73,6 +129,12 @@ export const login = async (req: AuthRequest, res: Response) => {
     user.refreshToken = refreshToken;
     await user.save();
 
+    // Cache user data in Redis
+    const userCache = await User.findById(user._id).select('-password -refreshToken').lean();
+    if (userCache) {
+      await redis.setex(`${USER_CACHE_PREFIX}${user._id}`, USER_CACHE_TTL, JSON.stringify(userCache));
+    }
+
     // Set tokens in cookies
     res.cookie('accessToken', accessToken, {
       httpOnly: true,
@@ -103,6 +165,9 @@ export const logout = async (req: AuthRequest, res: Response) => {
   try {
     await User.findByIdAndUpdate(req.userId, { refreshToken: null });
     
+    // Invalidate user cache
+    await invalidateUserCache(req.userId!);
+    
     // Clear cookies
     res.clearCookie('accessToken');
     res.clearCookie('refreshToken');
@@ -116,10 +181,13 @@ export const logout = async (req: AuthRequest, res: Response) => {
 
 export const getUser = async (req: AuthRequest, res: Response) => {
   try {
-    const user = await User.findById(req.userId).select('-password -refreshToken');
+    // Try to get from Redis cache first, fallback to database
+    const user = await getUserFromCacheOrDB(req.userId!);
+    
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
+    
     res.json(user);
   } catch (error) {
     logger.error(`Get user error: ${error}`);
@@ -139,6 +207,10 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
+
+    // Invalidate cache and update with new data
+    await invalidateUserCache(req.userId!);
+    await redis.setex(`${USER_CACHE_PREFIX}${req.userId}`, USER_CACHE_TTL, JSON.stringify(user.toObject()));
 
     res.json(user);
   } catch (error) {
@@ -164,6 +236,10 @@ export const updateLocationAccess = async (req: AuthRequest, res: Response) => {
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
+
+    // Invalidate cache and update with new data
+    await invalidateUserCache(req.userId!);
+    await redis.setex(`${USER_CACHE_PREFIX}${req.userId}`, USER_CACHE_TTL, JSON.stringify(user.toObject()));
 
     logger.info(`Location access updated for user: ${req.userId} - Granted: ${locationAccessGranted}, Preference: ${locationPreference}`);
     res.json({ 
@@ -196,6 +272,12 @@ export const refreshToken = async (req: AuthRequest, res: Response) => {
 
     user.refreshToken = newRefreshToken;
     await user.save();
+
+    // Update cache with fresh data
+    const userCache = await User.findById(user._id).select('-password -refreshToken').lean();
+    if (userCache) {
+      await redis.setex(`${USER_CACHE_PREFIX}${user._id}`, USER_CACHE_TTL, JSON.stringify(userCache));
+    }
 
     // Update cookies with new tokens
     res.cookie('accessToken', accessToken, {
@@ -241,6 +323,9 @@ export const updateUserLocation = async (req: AuthRequest, res: Response) => {
     };
 
     await user.save();
+
+    // Invalidate cache to reflect location update
+    await invalidateUserCache(req.userId!);
 
     logger.info(`User location updated: ${req.userId}`);
     res.json({ 
