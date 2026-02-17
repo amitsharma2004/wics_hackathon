@@ -157,8 +157,7 @@ const driverSchema = new Schema<IDriver>({
 driverSchema.index({ currentLocation: '2dsphere' });
 
 // Index for common queries
-driverSchema.index({ user: 1 });
 driverSchema.index({ isVerified: 1, isBlocked: 1, isOnline: 1, isAvailable: 1 });
-driverSchema.index({ licenseNumber: 1 });
+driverSchema.index({ licenseNumber: -1 });
 
 export const Driver = mongoose.model<IDriver>('Driver', driverSchema);

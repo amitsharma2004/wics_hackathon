@@ -8,7 +8,8 @@ export interface IUser extends Document {
   refreshToken?: string;
   googleId?: string;
   locationAccessGranted?: boolean;
-  role: 'rider' | 'driver' | 'both';
+  locationPreference: 'accepted' | 'denied' | 'not_set';
+  role: 'rider' | 'driver' | 'both' | 'admin';
   phoneNumber?: string;
   profileImageUrl?: string;
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -21,9 +22,14 @@ const userSchema = new Schema<IUser>({
   refreshToken: { type: String },
   googleId: { type: String },
   locationAccessGranted: { type: Boolean, default: false },
+  locationPreference: {
+    type: String,
+    enum: ['accepted', 'denied', 'not_set'],
+    default: 'not_set'
+  },
   role: {
     type: String,
-    enum: ['rider', 'driver', 'both'],
+    enum: ['rider', 'driver', 'both', 'admin'],
     default: 'rider'
   },
   phoneNumber: { type: String },
