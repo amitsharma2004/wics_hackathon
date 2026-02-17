@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import express, { Request, Response } from 'express';
+import cors from 'cors';
 import session from 'express-session';
 import { connectDB } from './config/database.js';
 import { logger } from './config/logger.js';
@@ -9,6 +10,14 @@ import userRoutes from './modules/user/user.routes.js';
 dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// CORS configuration - allow all origins
+app.use(cors({
+  origin: '*',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
 app.use(express.json());
 

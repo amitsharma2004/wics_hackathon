@@ -19,11 +19,14 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
+    "@types/cors": "^2.8.19",
     "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "express-session": "^1.19.0",
     "firebase-admin": "^13.6.1",
+    "h3-js": "^4.4.0",
     "joi": "^18.0.2",
     "jsonwebtoken": "^9.0.3",
     "mongodb": "^7.1.0",
