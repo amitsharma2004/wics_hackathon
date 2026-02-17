@@ -1,0 +1,156 @@
+{
+  "user_endpoints": {
+    "register": {
+      "method": "POST",
+      "url": "http://localhost:3000/api/users/register",
+      "body": {
+        "name": "John Doe",
+        "email": "john.doe@college.edu",
+        "password": "password123"
+      }
+    },
+    "login": {
+      "method": "POST",
+      "url": "http://localhost:3000/api/users/login",
+      "body": {
+        "email": "john.doe@college.edu",
+        "password": "password123"
+      }
+    },
+    "refresh_token": {
+      "method": "POST",
+      "url": "http://localhost:3000/api/users/refresh-token",
+      "body": {
+        "refreshToken": "YOUR_REFRESH_TOKEN_HERE"
+      }
+    },
+    "get_user": {
+      "method": "GET",
+      "url": "http://localhost:3000/api/users/me",
+      "headers": {
+        "Authorization": "Bearer YOUR_ACCESS_TOKEN_HERE"
+      }
+    },
+    "update_profile": {
+      "method": "PUT",
+      "url": "http://localhost:3000/api/users/profile",
+      "headers": {
+        "Authorization": "Bearer YOUR_ACCESS_TOKEN_HERE"
+      },
+      "body": {
+        "name": "John Updated",
+        "email": "john.updated@college.edu"
+      }
+    },
+    "logout": {
+      "method": "POST",
+      "url": "http://localhost:3000/api/users/logout",
+      "headers": {
+        "Authorization": "Bearer YOUR_ACCESS_TOKEN_HERE"
+      }
+    }
+  },
+  "ride_endpoints": {
+    "create_ride": {
+      "method": "POST",
+      "url": "http://localhost:3000/api/rides",
+      "headers": {
+        "Authorization": "Bearer YOUR_ACCESS_TOKEN_HERE"
+      },
+      "body": {
+        "pickupLocation": {
+          "coordinates": [77.2090, 28.6139],
+          "address": "Connaught Place, New Delhi, Delhi 110001"
+        },
+        "destination": {
+          "coordinates": [77.2167, 28.6358],
+          "address": "India Gate, New Delhi, Delhi 110001"
+        },
+        "pickupTime": "2026-02-15T10:00:00.000Z",
+        "amount": 150
+      }
+    },
+    "get_user_rides": {
+      "method": "GET",
+      "url": "http://localhost:3000/api/rides",
+      "headers": {
+        "Authorization": "Bearer YOUR_ACCESS_TOKEN_HERE"
+      }
+    },
+    "get_ride_by_id": {
+      "method": "GET",
+      "url": "http://localhost:3000/api/rides/RIDE_ID_HERE",
+      "headers": {
+        "Authorization": "Bearer YOUR_ACCESS_TOKEN_HERE"
+      }
+    },
+    "cancel_ride": {
+      "method": "PATCH",
+      "url": "http://localhost:3000/api/rides/RIDE_ID_HERE/cancel",
+      "headers": {
+        "Authorization": "Bearer YOUR_ACCESS_TOKEN_HERE"
+      }
+    }
+  },
+  "sample_users": [
+    {
+      "name": "Alice Student",
+      "email": "alice@university.edu",
+      "password": "alice123"
+    },
+    {
+      "name": "Bob Captain",
+      "email": "bob@college.ac.in",
+      "password": "bob123"
+    },
+    {
+      "name": "Charlie Rider",
+      "email": "charlie@institute.edu",
+      "password": "charlie123"
+    }
+  ],
+  "sample_rides": [
+    {
+      "pickupLocation": {
+        "coordinates": [77.2090, 28.6139],
+        "address": "Connaught Place, New Delhi"
+      },
+      "destination": {
+        "coordinates": [77.2167, 28.6358],
+        "address": "India Gate, New Delhi"
+      },
+      "pickupTime": "2026-02-15T10:00:00.000Z",
+      "amount": 150
+    },
+    {
+      "pickupLocation": {
+        "coordinates": [72.8777, 19.0760],
+        "address": "Gateway of India, Mumbai"
+      },
+      "destination": {
+        "coordinates": [72.8258, 18.9750],
+        "address": "Bandra West, Mumbai"
+      },
+      "pickupTime": "2026-02-15T14:30:00.000Z",
+      "amount": 250
+    },
+    {
+      "pickupLocation": {
+        "coordinates": [77.5946, 12.9716],
+        "address": "MG Road, Bangalore"
+      },
+      "destination": {
+        "coordinates": [77.6408, 12.9698],
+        "address": "Whitefield, Bangalore"
+      },
+      "pickupTime": "2026-02-15T18:00:00.000Z",
+      "amount": 300
+    }
+  ],
+  "notes": {
+    "authentication": "After login/register, copy the accessToken and use it in Authorization header as 'Bearer YOUR_TOKEN'",
+    "coordinates_format": "Coordinates are in [longitude, latitude] format (GeoJSON standard)",
+    "pickup_time": "Must be a future date in ISO 8601 format",
+    "allowed_domains": "Only emails with domains: edu, ac.in, student.edu are allowed (check .env ALLOWED_EMAIL_DOMAINS)"
+  }
+}

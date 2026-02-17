@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { User } from './user.model.js';
 import { logger } from '../../config/logger.js';
 import { isAllowedEmailDomain, getAllowedDomains } from '../../utils/emailValidator.js';
+import { AuthRequest } from '../../middleware/auth.middleware.js';
 
 const generateTokens = (userId: string) => {
   const accessToken = jwt.sign({ id: userId }, process.env.JWT_SECRET as string, { expiresIn: '15m' });
@@ -35,7 +36,7 @@ export const register = async (req: Request, res: Response) => {
     res.status(201).json({ 
       accessToken, 
       refreshToken,
-      user: { id: user._id, name: user.name, email: user.email } 
+      user: { id: user._id, name: user.name, email: user.email, locationAccessGranted: user.locationAccessGranted } 
     });
   } catch (error) {
     logger.error(`Register error: ${error}`);
@@ -60,7 +61,7 @@ export const login = async (req: Request, res: Response) => {
     res.json({ 
       accessToken, 
       refreshToken,
-      user: { id: user._id, name: user.name, email: user.email } 
+      user: { id: user._id, name: user.name, email: user.email, locationAccessGranted: user.locationAccessGranted } 
     });
   } catch (error) {
     logger.error(`Login error: ${error}`);
@@ -70,7 +71,7 @@ export const login = async (req: Request, res: Response) => {
 
 export const logout = async (req: Request, res: Response) => {
   try {
-    await User.findByIdAndUpdate(req.user?.id, { refreshToken: null });
+    await User.findByIdAndUpdate((req as AuthRequest).userId, { refreshToken: null });
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
     logger.error(`Logout error: ${error}`);
@@ -80,7 +81,7 @@ export const logout = async (req: Request, res: Response) => {
 
 export const getUser = async (req: Request, res: Response) => {
   try {
-    const user = await User.findById(req.user?.id).select('-password -refreshToken');
+    const user = await User.findById((req as AuthRequest).userId).select('-password -refreshToken');
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -95,7 +96,7 @@ export const updateProfile = async (req: Request, res: Response) => {
   try {
     const { name, email } = req.body;
     const user = await User.findByIdAndUpdate(
-      req.user?.id,
+      (req as AuthRequest).userId,
       { name, email },
       { new: true, runValidators: true }
     ).select('-password -refreshToken');
@@ -107,6 +108,28 @@ export const updateProfile = async (req: Request, res: Response) => {
     res.json(user);
   } catch (error) {
     logger.error(`Update profile error: ${error}`);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export const updateLocationAccess = async (req: Request, res: Response) => {
+  try {
+    const { locationAccessGranted } = req.body;
+
+    const user = await User.findByIdAndUpdate(
+      (req as AuthRequest).userId,
+      { locationAccessGranted },
+      { new: true }
+    ).select('-password -refreshToken');
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    logger.info(`Location access updated for user: ${(req as AuthRequest).userId} - ${locationAccessGranted}`);
+    res.json({ message: 'Location access updated', locationAccessGranted: user.locationAccessGranted });
+  } catch (error) {
+    logger.error(`Update location access error: ${error}`);
     res.status(500).json({ message: 'Server error' });
   }
 };
