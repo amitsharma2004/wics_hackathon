@@ -35,71 +35,84 @@ export default function Dashboard() {
   const [routeError, setRouteError] = useState<string>('');
   const MAX_DISTANCE_KM = 100; // Maximum allowed distance in kilometers
 
-  const requestLocationPermission = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const { latitude, longitude } = position.coords;
-          setCurrentLocation([latitude, longitude]);
-          fetchAddress(latitude, longitude);
-          setLocationPermission('granted');
-          setLoading(false);
+  const successHandler = (position: GeolocationPosition) => {
+    const { latitude, longitude } = position.coords;
+    setCurrentLocation([latitude, longitude]);
+    fetchAddress(latitude, longitude);
+    setLocationPermission('granted');
+    setLoading(false);
+  };
 
-          // Update user's location access preference in backend
-          const token = localStorage.getItem('accessToken');
-          if (token) {
-            try {
-              await fetch('http://localhost:3000/api/users/location-access', {
-                method: 'PATCH',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ locationAccessGranted: true })
-              });
-            } catch (error) {
-              console.error('Failed to update location access:', error);
-            }
-          }
-        },
-        (error) => {
-          console.error('Error getting location:', error);
-          setLocationPermission('denied');
-          setCurrentLocation([28.6139, 77.2090]);
-          setPickupAddress('Location access denied - Using default location');
-          setLoading(false);
-        }
-      );
+  const errorHandler = (error: GeolocationPositionError) => {
+    console.error('Error getting location:', error);
+    setLocationPermission('denied');
+    setCurrentLocation([28.6139, 77.2090]);
+    setPickupAddress('Location access denied - Using default location');
+    setLoading(false);
+  };
+
+  const getLocation = async () => {
+    if (!navigator.geolocation) {
+      setCurrentLocation([28.6139, 77.2090]);
+      setPickupAddress('Geolocation not supported - Using default location');
+      setLoading(false);
+      return;
+    }
+
+    const permission = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
+
+    if (permission.state === 'granted') {
+      navigator.geolocation.getCurrentPosition(successHandler, errorHandler);
+    } else if (permission.state === 'prompt') {
+      // call it only if you actually want to trigger popup
+      navigator.geolocation.getCurrentPosition(successHandler, errorHandler);
     } else {
+      // denied
       setLocationPermission('denied');
       setCurrentLocation([28.6139, 77.2090]);
-      setPickupAddress('Geolocation not supported');
+      setPickupAddress('Location access denied - Using default location');
       setLoading(false);
     }
   };
 
+  const requestLocation = async () => {
+    // Update backend with accepted preference
+    try {
+      await fetch('http://localhost:3000/api/users/location-access', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({ locationPreference: 'accepted', locationAccessGranted: true })
+      });
+    } catch (error) {
+      console.error('Failed to update location preference:', error);
+    }
+    await getLocation();
+  };
+
   useEffect(() => {
-    // Check if user has previously granted location access
     const checkLocationAccess = async () => {
-      const token = localStorage.getItem('accessToken');
-      if (token) {
-        try {
-          const response = await fetch('http://localhost:3000/api/users/me', {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
-          const userData = await response.json();
-          
-          if (userData.locationAccessGranted) {
-            // Auto-request location if previously granted
-            requestLocationPermission();
-          } else {
-            setLoading(false);
-          }
-        } catch (error) {
-          console.error('Failed to fetch user data:', error);
+      try {
+        const response = await fetch('http://localhost:3000/api/users/me', {
+          credentials: 'include'
+        });
+        
+        if (!response.ok) {
+          setLoading(false);
+          return;
+        }
+
+        const userData = await response.json();
+
+        if (userData.locationPreference === 'accepted') {
+          await getLocation();
+        } else {
           setLoading(false);
         }
-      } else {
+      } catch (error) {
+        console.error('Failed to fetch user data:', error);
         setLoading(false);
       }
     };
@@ -121,10 +134,10 @@ export default function Dashboard() {
 
   // Debounce function
   const debounce = (func: Function, delay: number) => {
-    let timeoutId: NodeJS.Timeout;
+    let timeoutId: number;
     return (...args: any[]) => {
       clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => func(...args), delay);
+      timeoutId = setTimeout(() => func(...args), delay) as unknown as number;
     };
   };
 
@@ -281,7 +294,7 @@ export default function Dashboard() {
           )}
 
           <button
-            onClick={requestLocationPermission}
+            onClick={requestLocation}
             className="w-full bg-indigo-600 text-white py-4 rounded-xl font-semibold hover:bg-indigo-700 transition transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -296,6 +309,7 @@ export default function Dashboard() {
               setCurrentLocation([28.6139, 77.2090]);
               setPickupAddress('Default Location - New Delhi');
               setLocationPermission('denied');
+              setLoading(false);
             }}
             className="w-full text-gray-600 py-3 rounded-xl font-medium hover:bg-gray-100 transition"
           >
@@ -348,13 +362,59 @@ export default function Dashboard() {
       <div className="absolute top-0 left-0 right-0 z-[1000] bg-white shadow-md p-4">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold text-gray-900">Book a Ride</h1>
-          <button className="p-2 rounded-full hover:bg-gray-100">
+          <button 
+            onClick={() => window.location.href = '/me'}
+            className="p-2 rounded-full hover:bg-gray-100 transition"
+          >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
           </button>
         </div>
       </div>
+
+      {/* Route Info Card - Google Maps Style */}
+      {routeInfo && !showBottomSheet && (
+        <div className="absolute top-20 left-4 right-4 z-[1000] bg-white rounded-2xl shadow-lg p-4 animate-fadeIn">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <div>
+                  <p className="text-2xl font-bold text-gray-900">{Math.round(routeInfo.duration)} min</p>
+                  <p className="text-xs text-gray-500">Duration</p>
+                </div>
+              </div>
+              <div className="h-10 w-px bg-gray-300"></div>
+              <div className="flex items-center gap-2">
+                <svg className="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                </svg>
+                <div>
+                  <p className="text-2xl font-bold text-gray-900">{routeInfo.distance.toFixed(1)} km</p>
+                  <p className="text-xs text-gray-500">Distance</p>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setDestination('');
+                setDestinationCoords(null);
+                setRouteCoordinates([]);
+                setRouteInfo(null);
+                setRouteError('');
+              }}
+              className="p-2 hover:bg-gray-100 rounded-full transition"
+            >
+              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Bottom Sheet */}
       <div

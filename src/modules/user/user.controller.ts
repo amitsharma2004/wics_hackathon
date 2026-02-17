@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { User } from './user.model.js';
 import { logger } from '../../config/logger.js';
@@ -11,7 +11,7 @@ const generateTokens = (userId: string) => {
   return { accessToken, refreshToken };
 };
 
-export const register = async (req: Request, res: Response) => {
+export const register = async (req: AuthRequest, res: Response) => {
   try {
     const { name, email, password } = req.body;
 
@@ -33,6 +33,21 @@ export const register = async (req: Request, res: Response) => {
     user.refreshToken = refreshToken;
     await user.save();
 
+    // Set tokens in cookies
+    res.cookie('accessToken', accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 15 * 60 * 1000 // 15 minutes
+    });
+
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+
     res.status(201).json({ 
       accessToken, 
       refreshToken,
@@ -44,7 +59,7 @@ export const register = async (req: Request, res: Response) => {
   }
 };
 
-export const login = async (req: Request, res: Response) => {
+export const login = async (req: AuthRequest, res: Response) => {
   try {
     const { email, password } = req.body;
 
@@ -58,6 +73,21 @@ export const login = async (req: Request, res: Response) => {
     user.refreshToken = refreshToken;
     await user.save();
 
+    // Set tokens in cookies
+    res.cookie('accessToken', accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 15 * 60 * 1000 // 15 minutes
+    });
+
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+
     res.json({ 
       accessToken, 
       refreshToken,
@@ -69,9 +99,14 @@ export const login = async (req: Request, res: Response) => {
   }
 };
 
-export const logout = async (req: Request, res: Response) => {
+export const logout = async (req: AuthRequest, res: Response) => {
   try {
-    await User.findByIdAndUpdate((req as AuthRequest).userId, { refreshToken: null });
+    await User.findByIdAndUpdate(req.userId, { refreshToken: null });
+    
+    // Clear cookies
+    res.clearCookie('accessToken');
+    res.clearCookie('refreshToken');
+    
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
     logger.error(`Logout error: ${error}`);
@@ -79,9 +114,9 @@ export const logout = async (req: Request, res: Response) => {
   }
 };
 
-export const getUser = async (req: Request, res: Response) => {
+export const getUser = async (req: AuthRequest, res: Response) => {
   try {
-    const user = await User.findById((req as AuthRequest).userId).select('-password -refreshToken');
+    const user = await User.findById(req.userId).select('-password -refreshToken');
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -92,11 +127,11 @@ export const getUser = async (req: Request, res: Response) => {
   }
 };
 
-export const updateProfile = async (req: Request, res: Response) => {
+export const updateProfile = async (req: AuthRequest, res: Response) => {
   try {
     const { name, email } = req.body;
     const user = await User.findByIdAndUpdate(
-      (req as AuthRequest).userId,
+      req.userId,
       { name, email },
       { new: true, runValidators: true }
     ).select('-password -refreshToken');
@@ -112,13 +147,17 @@ export const updateProfile = async (req: Request, res: Response) => {
   }
 };
 
-export const updateLocationAccess = async (req: Request, res: Response) => {
+export const updateLocationAccess = async (req: AuthRequest, res: Response) => {
   try {
-    const { locationAccessGranted } = req.body;
+    const { locationAccessGranted, locationPreference } = req.body;
+
+    const updateData: any = {};
+    if (locationAccessGranted !== undefined) updateData.locationAccessGranted = locationAccessGranted;
+    if (locationPreference !== undefined) updateData.locationPreference = locationPreference;
 
     const user = await User.findByIdAndUpdate(
-      (req as AuthRequest).userId,
-      { locationAccessGranted },
+      req.userId,
+      updateData,
       { new: true }
     ).select('-password -refreshToken');
 
@@ -126,15 +165,19 @@ export const updateLocationAccess = async (req: Request, res: Response) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    logger.info(`Location access updated for user: ${(req as AuthRequest).userId} - ${locationAccessGranted}`);
-    res.json({ message: 'Location access updated', locationAccessGranted: user.locationAccessGranted });
+    logger.info(`Location access updated for user: ${req.userId} - Granted: ${locationAccessGranted}, Preference: ${locationPreference}`);
+    res.json({ 
+      message: 'Location access updated', 
+      locationAccessGranted: user.locationAccessGranted,
+      locationPreference: user.locationPreference
+    });
   } catch (error) {
     logger.error(`Update location access error: ${error}`);
     res.status(500).json({ message: 'Server error' });
   }
 };
 
-export const refreshToken = async (req: Request, res: Response) => {
+export const refreshToken = async (req: AuthRequest, res: Response) => {
   try {
     const { refreshToken } = req.body;
 
@@ -153,6 +196,21 @@ export const refreshToken = async (req: Request, res: Response) => {
 
     user.refreshToken = newRefreshToken;
     await user.save();
+
+    // Update cookies with new tokens
+    res.cookie('accessToken', accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 15 * 60 * 1000 // 15 minutes
+    });
+
+    res.cookie('refreshToken', newRefreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
 
     res.json({ accessToken, refreshToken: newRefreshToken });
   } catch (error) {

@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import session from 'express-session';
+import cookieParser from 'cookie-parser';
 import { connectDB } from './config/database.js';
 import { logger } from './config/logger.js';
 import passport from './config/passport.js';
@@ -13,13 +14,14 @@ const PORT = process.env.PORT || 3000;
 
 // CORS configuration - allow all origins
 app.use(cors({
-  origin: '*',
+  origin: 'http://localhost:5173',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(express.json());
+app.use(cookieParser());
 
 app.use(
   session({
@@ -45,6 +47,9 @@ app.use('/api/users', userRoutes);
 
 import rideRoutes from './modules/ride/ride.routes.js';
 app.use('/api/rides', rideRoutes);
+
+import driverRoutes from './modules/driver/driver.routes.js';
+app.use('/api/drivers', driverRoutes);
 
 // Start server
 const startServer = async () => {

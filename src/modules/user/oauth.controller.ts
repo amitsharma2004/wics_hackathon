@@ -1,9 +1,10 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { IUser } from './user.model.js';
+import { AuthRequest } from '../../middleware/auth.middleware.js';
 
-export const googleCallback = (req: Request, res: Response) => {
-  const user = req.user as IUser;
+export const googleCallback = (req: AuthRequest, res: Response) => {
+  const user = req.user as unknown as IUser;
   
   if (!user) {
     return res.redirect(`${process.env.FRONTEND_URL}/login?error=authentication_failed`);
@@ -15,6 +16,6 @@ export const googleCallback = (req: Request, res: Response) => {
   res.redirect(`${process.env.FRONTEND_URL}/auth/callback?accessToken=${accessToken}&refreshToken=${refreshToken}`);
 };
 
-export const authFailure = (req: Request, res: Response) => {
+export const authFailure = (req: AuthRequest, res: Response) => {
   res.redirect(`${process.env.FRONTEND_URL}/login?error=authentication_failed`);
 };

@@ -1,13 +1,14 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { Ride } from './ride.model.js';
 import { logger } from '../../config/logger.js';
+import { AuthRequest } from '../../middleware/auth.middleware.js';
 
-export const createRide = async (req: Request, res: Response) => {
+export const createRide = async (req: AuthRequest, res: Response) => {
   try {
     const { pickupLocation, destination, pickupTime, amount } = req.body;
 
     const ride = await Ride.create({
-      user: req.user,
+      user: req.userId,
       pickupLocation,
       destination,
       pickupTime,
@@ -18,7 +19,7 @@ export const createRide = async (req: Request, res: Response) => {
 
     await ride.populate('user', 'name email');
 
-    logger.info(`Ride created: ${ride._id} by user: ${req.user}`);
+    logger.info(`Ride created: ${ride._id} by user: ${req.userId}`);
     res.status(201).json(ride);
   } catch (error) {
     logger.error(`Create ride error: ${error}`);
@@ -26,7 +27,7 @@ export const createRide = async (req: Request, res: Response) => {
   }
 };
 
-export const getRide = async (req: Request, res: Response) => {
+export const getRide = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -39,7 +40,7 @@ export const getRide = async (req: Request, res: Response) => {
     }
 
     // Check if user is authorized to view this ride
-    if (ride.user._id.toString() !== req.user && ride.captain?._id.toString() !== req.user) {
+    if (ride.user._id.toString() !== req.userId && ride.captain?._id.toString() !== req.userId) {
       return res.status(403).json({ message: 'Not authorized to view this ride' });
     }
 
@@ -50,9 +51,9 @@ export const getRide = async (req: Request, res: Response) => {
   }
 };
 
-export const getUserRides = async (req: Request, res: Response) => {
+export const getUserRides = async (req: AuthRequest, res: Response) => {
   try {
-    const rides = await Ride.find({ user: req.user })
+    const rides = await Ride.find({ user: req.userId })
       .populate('captain', 'name email')
       .sort({ createdAt: -1 });
 
@@ -63,7 +64,7 @@ export const getUserRides = async (req: Request, res: Response) => {
   }
 };
 
-export const cancelRide = async (req: Request, res: Response) => {
+export const cancelRide = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -74,7 +75,7 @@ export const cancelRide = async (req: Request, res: Response) => {
     }
 
     // Check if user is authorized to cancel this ride
-    if (ride.user.toString() !== req.user) {
+    if (ride.user.toString() !== req.userId) {
       return res.status(403).json({ message: 'Not authorized to cancel this ride' });
     }
 
@@ -86,7 +87,7 @@ export const cancelRide = async (req: Request, res: Response) => {
     ride.status = 'cancelled';
     await ride.save();
 
-    logger.info(`Ride cancelled: ${ride._id} by user: ${req.user}`);
+    logger.info(`Ride cancelled: ${ride._id} by user: ${req.userId}`);
     res.json({ message: 'Ride cancelled successfully', ride });
   } catch (error) {
     logger.error(`Cancel ride error: ${error}`);
