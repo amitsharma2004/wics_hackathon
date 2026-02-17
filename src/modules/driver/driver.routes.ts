@@ -9,7 +9,8 @@ import {
   verifyDriver,
   updateDriverStatus,
   updateDriverLocation,
-  getNearbyDrivers
+  getNearbyDrivers,
+  getNearbyDriversByH3
 } from './driver.controller.js';
 import { verifyToken, verifyAdmin } from '../../middleware/auth.middleware.js';
 import { validate } from '../../middleware/validate.middleware.js';
@@ -24,8 +25,11 @@ import {
 
 const router = Router();
 
+// Public routes
 router.get('/nearby', getNearbyDrivers);
+router.get('/nearby-h3', getNearbyDriversByH3);
 
+// Driver routes
 router.post('/', verifyToken, validate(createDriverSchema), createDriver);
 router.get('/me', verifyToken, getDriver);
 router.put('/', verifyToken, validate(updateDriverSchema), updateDriver);
@@ -36,6 +40,7 @@ router.patch('/location', verifyToken, validate(updateLocationSchema), updateDri
 
 router.get('/:id', verifyToken, getDriverById);
 
+// Admin routes
 router.patch('/admin/:id/verify', verifyToken, verifyAdmin, validate(verifyDriverSchema), verifyDriver);
 router.patch('/admin/:id/block', verifyToken, verifyAdmin, validate(blockDriverSchema), blockDriver);
 

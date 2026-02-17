@@ -33,6 +33,7 @@ export interface IDriver extends Document {
     type: string;
     coordinates: [number, number];
   };
+  h3Index?: string;
   isOnline: boolean;
   isAvailable: boolean;
   verificationDocuments?: {
@@ -137,6 +138,10 @@ const driverSchema = new Schema<IDriver>({
     coordinates: {
       type: [Number]
     }
+  },
+  h3Index: {
+    type: String,
+    index: true
   },
   isOnline: {
     type: Boolean,

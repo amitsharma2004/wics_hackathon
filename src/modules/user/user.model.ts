@@ -34,12 +34,10 @@ const userSchema = new Schema<IUser>({
   currentLocation: {
     type: {
       type: String,
-      enum: ['Point'],
-      default: 'Point'
+      enum: ['Point']
     },
     coordinates: {
-      type: [Number],
-      default: undefined
+      type: [Number]
     }
   },
   role: {

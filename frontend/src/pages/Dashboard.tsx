@@ -17,7 +17,7 @@ function MapUpdater({ center }: { center: [number, number] }) {
     map.setView(center, 15);
   }, [center, map]);
   return null;
-}
+};
 
 export default function Dashboard() {
   const [currentLocation, setCurrentLocation] = useState<[number, number] | null>(null);
@@ -33,13 +33,39 @@ export default function Dashboard() {
   const [routeCoordinates, setRouteCoordinates] = useState<[number, number][]>([]);
   const [routeInfo, setRouteInfo] = useState<{ distance: number; duration: number } | null>(null);
   const [routeError, setRouteError] = useState<string>('');
+  const [nearbyDrivers, setNearbyDrivers] = useState<any[]>([]);
   const MAX_DISTANCE_KM = 100; // Maximum allowed distance in kilometers
 
-  const successHandler = (position: GeolocationPosition) => {
+  // Fetch nearby drivers using H3
+  const fetchNearbyDrivers = async (latitude: number, longitude: number) => {
+    try {
+      const response = await fetch(
+        `http://localhost:3000/api/drivers/nearby-h3?latitude=${latitude}&longitude=${longitude}`,
+        {
+          credentials: 'include'
+        }
+      );
+
+      if (response.ok) {
+        const drivers = await response.json();
+        setNearbyDrivers(drivers);
+        console.log('Nearby drivers found:', drivers.length);
+        console.log('Drivers:', drivers);
+      }
+    } catch (error) {
+      console.error('Error fetching nearby drivers:', error);
+    }
+  };
+
+  const successHandler = async (position: GeolocationPosition) => {
     const { latitude, longitude } = position.coords;
     setCurrentLocation([latitude, longitude]);
     fetchAddress(latitude, longitude);
     setLocationPermission('granted');
+    
+    // Fetch nearby drivers from backend
+    await fetchNearbyDrivers(latitude, longitude);
+    
     setLoading(false);
   };
 
@@ -573,4 +599,4 @@ export default function Dashboard() {
       </div>
     </div>
   );
-}
+};
