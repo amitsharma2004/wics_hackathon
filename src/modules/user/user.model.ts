@@ -9,6 +9,10 @@ export interface IUser extends Document {
   googleId?: string;
   locationAccessGranted?: boolean;
   locationPreference: 'accepted' | 'denied' | 'not_set';
+  currentLocation?: {
+    type: string;
+    coordinates: [number, number];
+  };
   role: 'rider' | 'driver' | 'both' | 'admin';
   phoneNumber?: string;
   profileImageUrl?: string;
@@ -27,6 +31,17 @@ const userSchema = new Schema<IUser>({
     enum: ['accepted', 'denied', 'not_set'],
     default: 'not_set'
   },
+  currentLocation: {
+    type: {
+      type: String,
+      enum: ['Point'],
+      default: 'Point'
+    },
+    coordinates: {
+      type: [Number],
+      default: undefined
+    }
+  },
   role: {
     type: String,
     enum: ['rider', 'driver', 'both', 'admin'],
@@ -35,6 +50,8 @@ const userSchema = new Schema<IUser>({
   phoneNumber: { type: String },
   profileImageUrl: { type: String }
 }, { timestamps: true });
+
+userSchema.index({ 'currentLocation': '2dsphere' });
 
 userSchema.pre('save', async function() {
   if (!this.isModified('password')) return;

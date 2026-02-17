@@ -218,3 +218,37 @@ export const refreshToken = async (req: AuthRequest, res: Response) => {
     res.status(403).json({ message: 'Invalid refresh token' });
   }
 };
+
+// Update user location (stores in MongoDB for riders)
+export const updateUserLocation = async (req: AuthRequest, res: Response) => {
+  try {
+    const { coordinates } = req.body; // [longitude, latitude]
+
+    if (!coordinates || coordinates.length !== 2) {
+      return res.status(400).json({ message: 'Valid coordinates [longitude, latitude] are required' });
+    }
+
+    const user = await User.findById(req.userId);
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Update user location in MongoDB (riders don't move frequently)
+    user.currentLocation = {
+      type: 'Point',
+      coordinates
+    };
+
+    await user.save();
+
+    logger.info(`User location updated: ${req.userId}`);
+    res.json({ 
+      message: 'Location updated successfully',
+      stored: 'mongodb'
+    });
+  } catch (error) {
+    logger.error(`Update user location error: ${error}`);
+    res.status(500).json({ message: 'Failed to update location' });
+  }
+};
