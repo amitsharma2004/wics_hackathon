@@ -7,18 +7,23 @@ import { connectDB } from './config/database.js';
 import { logger } from './config/logger.js';
 import passport from './config/passport.js';
 import userRoutes from './modules/user/user.routes.js';
+import { locationSyncService } from './services/locationSyncService.js';
 
 dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// CORS configuration - allow all origins
+// CORS configuration
 app.use(cors({
   origin: 'http://localhost:5173',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
+  exposedHeaders: ['Set-Cookie'],
+  preflightContinue: false,
+  optionsSuccessStatus: 204
 }));
+
 
 app.use(express.json());
 app.use(cookieParser());
@@ -51,10 +56,18 @@ app.use('/api/rides', rideRoutes);
 import driverRoutes from './modules/driver/driver.routes.js';
 app.use('/api/drivers', driverRoutes);
 
+import adminRoutes from './modules/admin/admin.routes.js';
+app.use('/api/admin', adminRoutes);
+
 // Start server
 const startServer = async () => {
   try {
     await connectDB();
+    
+    // Start location sync cron job (runs every 5 minutes)
+    locationSyncService.start('*/5 * * * *');
+    logger.info('Location sync service started');
+    
     app.listen(PORT, () => {
       logger.info(`Server running on port ${PORT}`);
     });
@@ -68,11 +81,13 @@ startServer();
 
 process.on('SIGTERM', () => {
   logger.info('Server stopped: SIGTERM received');
+  locationSyncService.stop();
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
   logger.info('Server stopped: SIGINT received (Ctrl+C)');
+  locationSyncService.stop();
   process.exit(0);
 });
 

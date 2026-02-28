@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import { useLocationHandler } from '../utils/locationHandler';
 
 // Fix for default marker icons in React-Leaflet
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -34,28 +35,38 @@ export default function Dashboard() {
   const [routeInfo, setRouteInfo] = useState<{ distance: number; duration: number } | null>(null);
   const [routeError, setRouteError] = useState<string>('');
   const [nearbyDrivers, setNearbyDrivers] = useState<any[]>([]);
+  const [userRole, setUserRole] = useState<'rider' | 'driver' | 'both' | 'admin'>('rider');
+  const [currentH3Cell, setCurrentH3Cell] = useState<string>('');
   const MAX_DISTANCE_KM = 100; // Maximum allowed distance in kilometers
 
-  // Fetch nearby drivers using H3
-  const fetchNearbyDrivers = async (latitude: number, longitude: number) => {
-    try {
-      const response = await fetch(
-        `http://localhost:3000/api/drivers/nearby-h3?latitude=${latitude}&longitude=${longitude}`,
-        {
-          credentials: 'include'
-        }
-      );
+  // Initialize location handler
+  const { handleLocationUpdate, initializeFromStorage } = useLocationHandler();
 
-      if (response.ok) {
-        const drivers = await response.json();
-        setNearbyDrivers(drivers);
-        console.log('Nearby drivers found:', drivers.length);
-        console.log('Drivers:', drivers);
-      }
-    } catch (error) {
-      console.error('Error fetching nearby drivers:', error);
+  // Initialize from localStorage on mount
+  useEffect(() => {
+    const storedLocation = initializeFromStorage();
+    if (storedLocation) {
+      console.log('Restored location from storage:', storedLocation);
     }
-  };
+  }, [initializeFromStorage]);
+
+  // Fetch user profile to get role
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      try {
+        const response = await fetch('http://localhost:3000/api/users/me', {
+          credentials: 'include'
+        });
+        if (response.ok) {
+          const userData = await response.json();
+          setUserRole(userData.role || 'rider');
+        }
+      } catch (error) {
+        console.error('Error fetching user profile:', error);
+      }
+    };
+    fetchUserProfile();
+  }, []);
 
   const successHandler = async (position: GeolocationPosition) => {
     const { latitude, longitude } = position.coords;
@@ -63,8 +74,18 @@ export default function Dashboard() {
     fetchAddress(latitude, longitude);
     setLocationPermission('granted');
     
-    // Fetch nearby drivers from backend
-    await fetchNearbyDrivers(latitude, longitude);
+    // Handle location update with H3 logic
+    const result = await handleLocationUpdate(latitude, longitude, userRole);
+    
+    setCurrentH3Cell(result.h3Cell);
+    setNearbyDrivers(result.nearbyDrivers);
+    
+    console.log('Location processed:', {
+      h3Cell: result.h3Cell,
+      cellChanged: result.cellChanged,
+      locationUpdated: result.locationUpdated,
+      driversFound: result.nearbyDrivers.length
+    });
     
     setLoading(false);
   };
