@@ -1,54 +1,20 @@
-import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-
-interface UserProfile {
-  _id: string;
-  name: string;
-  email: string;
-  phoneNumber?: string;
-  role: string;
-  locationAccessGranted?: boolean;
-  profileImageUrl?: string;
-}
+import { useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Profile() {
-  const [user, setUser] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const { user, loading, logout } = useAuth();
 
+  // Use useEffect to navigate, not during render
   useEffect(() => {
-    fetchUserProfile();
-  }, []);
-
-  const fetchUserProfile = async () => {
-    const token = localStorage.getItem('accessToken');
-    if (!token) {
+    if (!loading && !user) {
       navigate('/login');
-      return;
     }
+  }, [loading, user, navigate]);
 
-    try {
-      const response = await fetch('http://localhost:3000/api/users/me', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch profile');
-      }
-
-      const data = await response.json();
-      setUser(data);
-    } catch (error) {
-      console.error('Error fetching profile:', error);
-      navigate('/login');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
+  const handleLogout = async () => {
+    await logout();
     navigate('/login');
   };
 
@@ -58,6 +24,10 @@ export default function Profile() {
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
       </div>
     );
+  }
+
+  if (!user) {
+    return null; // Will redirect via useEffect
   }
 
   return (
@@ -151,7 +121,10 @@ export default function Profile() {
                 <p className="text-gray-600 mb-4 text-sm leading-relaxed">
                   Start earning by driving with us. Enjoy flexible hours, competitive earnings, and be your own boss!
                 </p>
-                <button className="bg-indigo-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-indigo-700 transition">
+                <button 
+                  onClick={() => navigate('/become-driver')}
+                  className="bg-indigo-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-indigo-700 transition"
+                >
                   Apply Now
                 </button>
               </div>
@@ -177,6 +150,30 @@ export default function Profile() {
 
         {/* Actions */}
         <div className="space-y-3">
+          {user?.role === 'admin' && (
+            <button
+              onClick={() => navigate('/admin')}
+              className="w-full bg-red-600 text-white py-4 rounded-xl font-semibold hover:bg-red-700 transition flex items-center justify-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+              Admin Dashboard
+            </button>
+          )}
+
+          {(user?.role === 'driver' || user?.role === 'both') && (
+            <button
+              onClick={() => navigate('/driver')}
+              className="w-full bg-indigo-600 text-white py-4 rounded-xl font-semibold hover:bg-indigo-700 transition flex items-center justify-center gap-2"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              Driver Dashboard
+            </button>
+          )}
+
           <button className="w-full bg-white border border-gray-200 text-gray-900 py-4 rounded-xl font-semibold hover:bg-gray-50 transition flex items-center justify-center gap-2">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
