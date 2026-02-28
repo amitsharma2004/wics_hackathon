@@ -18,6 +18,7 @@ const extractToken = (req: Request): string | null => {
 
 export const verifyToken = (req: Request, res: Response, next: NextFunction) => {
   // Check for token in Authorization header first
+  logger.info ('validating request...');
   logger.info (req.cookies.accessToken);
   let token = extractToken (req);
   if (!token) {

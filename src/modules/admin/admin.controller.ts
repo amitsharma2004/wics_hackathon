@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { locationSyncService } from '../../services/locationSyncService.js';
 import { logger } from '../../config/logger.js';
+import { Driver } from '../driver/driver.model.js';
 
 // Get location sync status
 export const getLocationSyncStatus = async (req: Request, res: Response) => {
@@ -33,5 +34,24 @@ export const triggerLocationSync = async (req: Request, res: Response) => {
   } catch (error) {
     logger.error(`Trigger location sync error: ${error}`);
     res.status(500).json({ message: 'Failed to trigger sync' });
+  }
+};
+
+// Get pending drivers (unverified and non-blocked)
+export const getPendingDrivers = async (req: Request, res: Response) => {
+  logger.info ('fetching drivers...')
+  try {
+    const pendingDrivers = await Driver.find({
+      isVerified: false,
+      isBlocked: false
+    })
+      .populate('user', 'name email phoneNumber')
+      .sort({ createdAt: -1 }); // Most recent first
+
+    logger.info(`Fetched ${pendingDrivers.length} pending drivers`);
+    res.json(pendingDrivers);
+  } catch (error) {
+    logger.error(`Get pending drivers error: ${error}`);
+    res.status(500).json({ message: 'Failed to fetch pending drivers' });
   }
 };

@@ -3,6 +3,9 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { useLocationHandler } from '../utils/locationHandler';
+import { socketClient } from '../utils/socketClient';
+import { RideRequestWaiting, RideAccepted, RideRequestExpired, ToastContainer } from '../components';
+import { useToast } from '../hooks/useToast';
 
 // Fix for default marker icons in React-Leaflet
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -37,10 +40,17 @@ export default function Dashboard() {
   const [nearbyDrivers, setNearbyDrivers] = useState<any[]>([]);
   const [userRole, setUserRole] = useState<'rider' | 'driver' | 'both' | 'admin'>('rider');
   const [currentH3Cell, setCurrentH3Cell] = useState<string>('');
+  const [socketConnected, setSocketConnected] = useState(false);
+  const [rideRequestStatus, setRideRequestStatus] = useState<'idle' | 'sending' | 'waiting' | 'accepted' | 'expired'>('idle');
+  const [acceptedDriver, setAcceptedDriver] = useState<any>(null);
+  const [requestId, setRequestId] = useState<string>('');
   const MAX_DISTANCE_KM = 100; // Maximum allowed distance in kilometers
 
   // Initialize location handler
   const { handleLocationUpdate, initializeFromStorage } = useLocationHandler();
+  
+  // Initialize toast notifications
+  const toast = useToast();
 
   // Initialize from localStorage on mount
   useEffect(() => {
@@ -50,7 +60,7 @@ export default function Dashboard() {
     }
   }, [initializeFromStorage]);
 
-  // Fetch user profile to get role
+  // Fetch user profile and initialize socket
   useEffect(() => {
     const fetchUserProfile = async () => {
       try {
@@ -60,12 +70,43 @@ export default function Dashboard() {
         if (response.ok) {
           const userData = await response.json();
           setUserRole(userData.role || 'rider');
+          
+          // Initialize socket connection
+          const token = document.cookie
+            .split('; ')
+            .find(row => row.startsWith('accessToken='))
+            ?.split('=')[1];
+          
+          if (token) {
+            socketClient.connect(token);
+            setSocketConnected(true);
+            toast.success('Connected to server');
+            
+            // Setup socket listeners
+            socketClient.onRideAccepted((data) => {
+              console.log('Ride accepted by driver:', data);
+              setRideRequestStatus('accepted');
+              setAcceptedDriver(data);
+              toast.success(`${data.driverName} accepted your ride!`);
+            });
+            
+            socketClient.onRideRequestExpired((data) => {
+              console.log('Ride request expired:', data);
+              setRideRequestStatus('expired');
+              toast.warning('No drivers available. Please try again.');
+            });
+          }
         }
       } catch (error) {
         console.error('Error fetching user profile:', error);
+        toast.error('Failed to connect to server');
       }
     };
     fetchUserProfile();
+    
+    return () => {
+      socketClient.disconnect();
+    };
   }, []);
 
   const successHandler = async (position: GeolocationPosition) => {
@@ -80,12 +121,21 @@ export default function Dashboard() {
     setCurrentH3Cell(result.h3Cell);
     setNearbyDrivers(result.nearbyDrivers);
     
+    if (result.nearbyDrivers.length > 0) {
+      toast.success(`Found ${result.nearbyDrivers.length} drivers nearby`);
+    }
+    
     console.log('Location processed:', {
       h3Cell: result.h3Cell,
       cellChanged: result.cellChanged,
       locationUpdated: result.locationUpdated,
       driversFound: result.nearbyDrivers.length
     });
+    
+    // Register user with socket if connected
+    if (socketConnected) {
+      socketClient.registerUser(userRole, [longitude, latitude]);
+    }
     
     setLoading(false);
   };
@@ -282,25 +332,74 @@ export default function Dashboard() {
     }
   };
 
-  const handleBookRide = () => {
+  const handleBookRide = async () => {
     if (!destination.trim()) {
-      alert('Please enter a destination');
+      toast.warning('Please enter a destination');
       return;
     }
     
     if (routeError) {
-      alert('Cannot book ride: ' + routeError);
+      toast.error('Cannot book ride: ' + routeError);
       return;
     }
 
-    if (!routeInfo) {
-      alert('Please select a destination from the suggestions');
+    if (!routeInfo || !destinationCoords || !currentLocation) {
+      toast.warning('Please select a destination from the suggestions');
       return;
     }
 
-    console.log('Booking ride to:', destination);
-    console.log('Route info:', routeInfo);
-    // TODO: Implement ride booking API call
+    if (nearbyDrivers.length === 0) {
+      toast.error('No drivers available in your area');
+      return;
+    }
+
+    setRideRequestStatus('sending');
+    toast.info('Sending ride request...');
+
+    try {
+      // Calculate fare (simple calculation: ₹10 base + ₹12 per km)
+      const fare = Math.round(10 + (routeInfo.distance * 12));
+      
+      // Get top 5 nearest drivers
+      const driverIds = nearbyDrivers.slice(0, 5).map(d => d.driver._id);
+
+      const response = await fetch('http://localhost:3000/api/rides/request', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          driverIds,
+          pickup: {
+            address: pickupAddress,
+            coordinates: [currentLocation[1], currentLocation[0]] // [lng, lat]
+          },
+          destination: {
+            address: destination,
+            coordinates: [destinationCoords[1], destinationCoords[0]] // [lng, lat]
+          },
+          fare,
+          distance: routeInfo.distance
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setRequestId(data.requestId);
+        setRideRequestStatus('waiting');
+        toast.success(`Request sent to ${data.sent} drivers`);
+        console.log('Ride request sent:', data);
+      } else {
+        const error = await response.json();
+        toast.error('Failed to send ride request: ' + error.message);
+        setRideRequestStatus('idle');
+      }
+    } catch (error) {
+      console.error('Error booking ride:', error);
+      toast.error('Failed to book ride. Please try again.');
+      setRideRequestStatus('idle');
+    }
   };
 
   if (loading || !currentLocation) {
@@ -369,6 +468,9 @@ export default function Dashboard() {
 
   return (
     <div className="h-screen w-full relative overflow-hidden">
+      {/* Toast Notifications */}
+      <ToastContainer toasts={toast.toasts} onClose={toast.removeToast} />
+      
       {/* Map */}
       <MapContainer
         center={currentLocation}
@@ -611,13 +713,49 @@ export default function Dashboard() {
           {/* Book Button */}
           <button
             onClick={handleBookRide}
-            disabled={!!routeError || !routeInfo}
+            disabled={!!routeError || !routeInfo || rideRequestStatus !== 'idle'}
             className="w-full bg-indigo-600 text-white py-4 rounded-xl font-semibold hover:bg-indigo-700 transition transform active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {routeError ? 'Cannot Book Ride' : 'Book Ride'}
+            {rideRequestStatus === 'sending' && 'Sending Request...'}
+            {rideRequestStatus === 'waiting' && 'Waiting for Driver...'}
+            {rideRequestStatus === 'accepted' && 'Driver Accepted!'}
+            {rideRequestStatus === 'expired' && 'Request Expired'}
+            {rideRequestStatus === 'idle' && (routeError ? 'Cannot Book Ride' : 'Book Ride')}
           </button>
         </div>
       </div>
+
+      {/* Ride Request Modals */}
+      {rideRequestStatus === 'waiting' && (
+        <RideRequestWaiting
+          nearbyDriversCount={nearbyDrivers.slice(0, 5).length}
+          onCancel={() => {
+            setRideRequestStatus('idle');
+            setRequestId('');
+          }}
+        />
+      )}
+
+      {rideRequestStatus === 'accepted' && acceptedDriver && (
+        <RideAccepted
+          driverName={acceptedDriver.driverName}
+          driverId={acceptedDriver.driverId}
+          onContinue={() => {
+            setRideRequestStatus('idle');
+            setAcceptedDriver(null);
+            setRequestId('');
+          }}
+        />
+      )}
+
+      {rideRequestStatus === 'expired' && (
+        <RideRequestExpired
+          onTryAgain={() => {
+            setRideRequestStatus('idle');
+            setRequestId('');
+          }}
+        />
+      )}
     </div>
   );
 };

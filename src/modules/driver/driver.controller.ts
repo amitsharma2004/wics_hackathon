@@ -10,9 +10,20 @@ import { locationSyncService } from '../../services/locationSyncService.js';
 
 // Create new driver
 export const createDriver = async (req: Request, res: Response) => {
+  logger.info ('Creating new driver...');
   try {
-    const { licenseNumber, licenseImageUrl, licenseExpiryDate, savedAddresses, paymentInfo, verificationDocuments } = req.body;
+    const { licenseNumber, vehicle } = req.body;
     const userId = (req as AuthRequest).userId;
+
+    // Validate vehicle data
+    if (!vehicle || !vehicle.model || !vehicle.color || !vehicle.licensePlate || !vehicle.type) {
+      return res.status(400).json({ message: 'Complete vehicle information is required' });
+    }
+
+    // Validate vehicle type
+    if (!['Mini', 'Sedan', 'SUV'].includes(vehicle.type)) {
+      return res.status(400).json({ message: 'Invalid vehicle type. Must be Mini, Sedan, or SUV' });
+    }
 
     // Check if user exists
     const user = await User.findById(userId);
@@ -32,15 +43,22 @@ export const createDriver = async (req: Request, res: Response) => {
       return res.status(400).json({ message: 'License number already registered' });
     }
 
+    // Check if license plate is already registered
+    const existingPlate = await Driver.findOne({ 'vehicle.licensePlate': vehicle.licensePlate.toUpperCase() });
+    if (existingPlate) {
+      return res.status(400).json({ message: 'License plate already registered' });
+    }
+
     // Create driver profile
     const driver = await Driver.create({
       user: userId,
       licenseNumber,
-      licenseImageUrl,
-      licenseExpiryDate,
-      savedAddresses: savedAddresses || [],
-      paymentInfo: paymentInfo || { walletBalance: 0 },
-      verificationDocuments
+      vehicle: {
+        model: vehicle.model,
+        color: vehicle.color,
+        licensePlate: vehicle.licensePlate.toUpperCase(),
+        type: vehicle.type
+      }
     });
 
     // Update user role to driver or both

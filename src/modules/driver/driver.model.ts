@@ -1,18 +1,10 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export interface ISavedAddress {
-  label: string;
-  address: string;
-  coordinates: [number, number];
-}
-
-export interface IPaymentInfo {
-  cardBrand?: string;
-  cardLastFour?: string;
-  walletBalance: number;
-  upiId?: string;
-  bankAccountNumber?: string;
-  ifscCode?: string;
+export interface IVehicle {
+  model: string;
+  color: string;
+  licensePlate: string;
+  type: 'Mini' | 'Sedan' | 'SUV';
 }
 
 export interface IDriver extends Document {
@@ -20,15 +12,12 @@ export interface IDriver extends Document {
   isVerified: boolean;
   isBlocked: boolean;
   licenseNumber: string;
-  licenseImageUrl: string;
-  licenseExpiryDate: Date;
+  vehicle: IVehicle;
   totalRides: number;
   completedRides: number;
   cancelledRides: number;
   averageRating: number;
   totalRatings: number;
-  savedAddresses: ISavedAddress[];
-  paymentInfo: IPaymentInfo;
   currentLocation?: {
     type: string;
     coordinates: [number, number];
@@ -36,35 +25,22 @@ export interface IDriver extends Document {
   h3Index?: string;
   isOnline: boolean;
   isAvailable: boolean;
-  verificationDocuments?: {
-    aadharImageUrl?: string;
-    panImageUrl?: string;
-    photoUrl?: string;
-  };
 }
 
-const savedAddressSchema = new Schema<ISavedAddress>({
-  label: { type: String, required: true },
-  address: { type: String, required: true },
-  coordinates: {
-    type: [Number],
+const vehicleSchema = new Schema<IVehicle>({
+  model: { type: String, required: true },
+  color: { type: String, required: true },
+  licensePlate: { 
+    type: String, 
     required: true,
-    validate: {
-      validator: function(v: number[]) {
-        return v.length === 2 && v[0] >= -180 && v[0] <= 180 && v[1] >= -90 && v[1] <= 90;
-      },
-      message: 'Invalid coordinates format'
-    }
+    uppercase: true,
+    trim: true
+  },
+  type: { 
+    type: String, 
+    enum: ['Mini', 'Sedan', 'SUV'],
+    required: true
   }
-}, { _id: false });
-
-const paymentInfoSchema = new Schema<IPaymentInfo>({
-  cardBrand: { type: String },
-  cardLastFour: { type: String, maxlength: 4 },
-  walletBalance: { type: Number, default: 0, min: 0 },
-  upiId: { type: String },
-  bankAccountNumber: { type: String },
-  ifscCode: { type: String }
 }, { _id: false });
 
 const driverSchema = new Schema<IDriver>({
@@ -85,14 +61,12 @@ const driverSchema = new Schema<IDriver>({
   licenseNumber: {
     type: String,
     required: true,
-    unique: true
+    unique: true,
+    uppercase: true,
+    trim: true
   },
-  licenseImageUrl: {
-    type: String,
-    required: true
-  },
-  licenseExpiryDate: {
-    type: Date,
+  vehicle: {
+    type: vehicleSchema,
     required: true
   },
   totalRides: {
@@ -121,19 +95,10 @@ const driverSchema = new Schema<IDriver>({
     default: 0,
     min: 0
   },
-  savedAddresses: {
-    type: [savedAddressSchema],
-    default: []
-  },
-  paymentInfo: {
-    type: paymentInfoSchema,
-    default: () => ({ walletBalance: 0 })
-  },
   currentLocation: {
     type: {
       type: String,
-      enum: ['Point'],
-      default: 'Point'
+      enum: ['Point']
     },
     coordinates: {
       type: [Number]
@@ -150,19 +115,16 @@ const driverSchema = new Schema<IDriver>({
   isAvailable: {
     type: Boolean,
     default: false
-  },
-  verificationDocuments: {
-    aadharImageUrl: { type: String },
-    panImageUrl: { type: String },
-    photoUrl: { type: String }
   }
 }, { timestamps: true });
 
-// Index for geospatial queries
-driverSchema.index({ currentLocation: '2dsphere' });
+// Index for geospatial queries (sparse: only index documents with currentLocation)
+driverSchema.index({ currentLocation: '2dsphere' }, { sparse: true });
 
 // Index for common queries
 driverSchema.index({ isVerified: 1, isBlocked: 1, isOnline: 1, isAvailable: 1 });
 driverSchema.index({ licenseNumber: -1 });
+driverSchema.index({ 'vehicle.licensePlate': 1 });
+driverSchema.index({ 'vehicle.type': 1 });
 
 export const Driver = mongoose.model<IDriver>('Driver', driverSchema);
