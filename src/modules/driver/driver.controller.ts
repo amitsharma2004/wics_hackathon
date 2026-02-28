@@ -286,7 +286,7 @@ export const updateDriverStatus = async (req: Request, res: Response) => {
 export const updateDriverLocation = async (req: Request, res: Response) => {
   try {
     const userId = (req as AuthRequest).userId;
-    const { coordinates } = req.body; // [longitude, latitude]
+    const { coordinates, socketId } = req.body; // [longitude, latitude], optional socketId
 
     if (!coordinates || coordinates.length !== 2) {
       return res.status(400).json({ message: 'Valid coordinates [longitude, latitude] are required' });
@@ -307,12 +307,14 @@ export const updateDriverLocation = async (req: Request, res: Response) => {
     const h3Index = getCell(latitude, longitude);
 
     // Store location in Redis with TTL (expires in 5 minutes if not updated)
+    // This key now includes socket ID for real-time ride requests
     const locationKey = `driver:location:${driver._id}`;
     const locationData = JSON.stringify({
       driverId: driver._id,
       userId: userId,
       coordinates: coordinates,
       h3Index: h3Index,
+      socketId: socketId || null, // Store socket ID if provided
       timestamp: new Date().toISOString(),
       isOnline: driver.isOnline,
       isAvailable: driver.isAvailable
