@@ -6,6 +6,7 @@ import { AuthRequest } from '../../middleware/auth.middleware.js';
 import redis from '../../config/redis.js';
 import { sendEmail, emailTemplates } from '../../config/nodemailer.js';
 import { getCell } from '../../config/h3.js';
+import { locationSyncService } from '../../services/locationSyncService.js';
 
 // Create new driver
 export const createDriver = async (req: Request, res: Response) => {
@@ -330,6 +331,9 @@ export const updateDriverLocation = async (req: Request, res: Response) => {
     // Store in Redis H3 index set for efficient spatial queries
     await redis.sadd(`h3:drivers:${h3Index}`, driver._id.toString());
     await redis.expire(`h3:drivers:${h3Index}`, 300); // 5 minutes TTL
+
+    // Add driver to active set for periodic sync to MongoDB
+    await locationSyncService.addToActiveSet(driver._id.toString());
 
     // Update MongoDB location less frequently (every 10th update or when status changes)
     const updateCount = await redis.incr(`driver:update_count:${driver._id}`);
