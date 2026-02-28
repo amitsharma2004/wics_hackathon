@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import express, { Request, Response } from 'express';
+import { createServer } from 'http';
 import cors from 'cors';
 import session from 'express-session';
 import cookieParser from 'cookie-parser';
@@ -8,9 +9,11 @@ import { logger } from './config/logger.js';
 import passport from './config/passport.js';
 import userRoutes from './modules/user/user.routes.js';
 import { locationSyncService } from './services/locationSyncService.js';
+import { socketService } from './services/socketService.js';
 
 dotenv.config();
 const app = express();
+const httpServer = createServer(app);
 const PORT = process.env.PORT || 3000;
 
 // CORS configuration
@@ -64,11 +67,15 @@ const startServer = async () => {
   try {
     await connectDB();
     
+    // Initialize Socket.IO
+    socketService.initialize(httpServer);
+    logger.info('Socket.IO service initialized');
+    
     // Start location sync cron job (runs every 5 minutes)
     locationSyncService.start('*/5 * * * *');
     logger.info('Location sync service started');
     
-    app.listen(PORT, () => {
+    httpServer.listen(PORT, () => {
       logger.info(`Server running on port ${PORT}`);
     });
   } catch (error) {
