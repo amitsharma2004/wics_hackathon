@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { useAuth } from './AuthContext';
+import { API_ENDPOINTS } from '../config/api';
 
 interface DriverProfile {
   _id: string;
@@ -77,7 +78,7 @@ export const DriverProvider = ({ children }: DriverProviderProps) => {
     setError(null);
 
     try {
-      const response = await fetch('http://localhost:3000/api/drivers/me', {
+      const response = await fetch(API_ENDPOINTS.DRIVER_ME, {
         credentials: 'include'
       });
 
@@ -99,7 +100,7 @@ export const DriverProvider = ({ children }: DriverProviderProps) => {
   // Update driver status (online/available)
   const updateDriverStatus = useCallback(async (isOnline: boolean, isAvailable: boolean) => {
     try {
-      const response = await fetch('http://localhost:3000/api/drivers/status', {
+      const response = await fetch(API_ENDPOINTS.DRIVER_STATUS, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json'
@@ -129,7 +130,7 @@ export const DriverProvider = ({ children }: DriverProviderProps) => {
   // Update driver location
   const updateDriverLocation = useCallback(async (coordinates: [number, number], socketId?: string) => {
     try {
-      const response = await fetch('http://localhost:3000/api/drivers/location', {
+      const response = await fetch(API_ENDPOINTS.DRIVER_LOCATION, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json'

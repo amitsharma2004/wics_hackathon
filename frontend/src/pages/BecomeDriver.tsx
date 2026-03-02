@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ToastContainer } from '../components';
 import { useToast } from '../hooks/useToast';
 import { useAuth } from '../contexts/AuthContext';
+import { API_ENDPOINTS } from '../config/api';
 
 export default function BecomeDriver() {
   const [formData, setFormData] = useState({
@@ -46,7 +47,7 @@ export default function BecomeDriver() {
     setLoading(true);
 
     try {
-      const response = await fetch('http://localhost:3000/api/drivers', {
+      const response = await fetch(API_ENDPOINTS.DRIVER_CREATE, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

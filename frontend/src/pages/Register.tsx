@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ToastContainer } from '../components';
 import { useToast } from '../hooks/useToast';
 import { useAuth } from '../contexts/AuthContext';
+import { API_ENDPOINTS } from '../config/api';
 
 export default function Register() {
   const [name, setName] = useState('');
@@ -20,7 +21,7 @@ export default function Register() {
     setLoading(true);
 
     try {
-      const response = await fetch('http://localhost:3000/api/users/register', {
+      const response = await fetch(API_ENDPOINTS.REGISTER, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -51,7 +52,7 @@ export default function Register() {
   };
 
   const handleGoogleSignup = () => {
-    window.location.href = 'http://localhost:3000/api/users/auth/google';
+    window.location.href = API_ENDPOINTS.GOOGLE_AUTH;
   };
 
   return (
