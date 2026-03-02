@@ -2,7 +2,6 @@ import { Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { User } from './user.model.js';
 import { logger } from '../../config/logger.js';
-import { isAllowedEmailDomain, getAllowedDomains } from '../../utils/emailValidator.js';
 import { AuthRequest } from '../../middleware/auth.middleware.js';
 import redis from '../../config/redis.js';
 import { sendEmail, emailTemplates } from '../../config/nodemailer.js';
@@ -59,13 +58,6 @@ const generateTokens = (userId: string) => {
 export const register = async (req: AuthRequest, res: Response) => {
   try {
     const { name, email, password } = req.body;
-
-    if (!isAllowedEmailDomain(email)) {
-      const allowedDomains = getAllowedDomains();
-      return res.status(403).json({ 
-        message: `Email domain not allowed. Please use an email from: ${allowedDomains.join(', ')}` 
-      });
-    }
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {

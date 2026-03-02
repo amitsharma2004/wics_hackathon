@@ -26,10 +26,17 @@ export default function BecomeDriver() {
         return;
       }
 
+      // Check if user is admin
+      if (user?.role === 'admin') {
+        toast.error('Admins cannot become drivers');
+        navigate('/me');
+        return;
+      }
+
       // Check if user is already a driver
       if (user?.role === 'driver' || user?.role === 'both') {
         toast.info('You already have a driver profile');
-        navigate('/driver');
+        navigate('/driver-dashboard');
       }
     }
   }, [authLoading, isAuthenticated, user, navigate, toast]);

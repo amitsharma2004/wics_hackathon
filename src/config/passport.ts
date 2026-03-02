@@ -2,7 +2,6 @@ import passport from 'passport';
 import { Strategy as LocalStrategy } from 'passport-local';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { User } from '../modules/user/user.model.js';
-import { isAllowedEmailDomain } from '../utils/emailValidator.js';
 import { logger } from './logger.js';
 import dotenv from 'dotenv';
 
@@ -55,9 +54,7 @@ passport.use(
         if (!email) {
           return done(null, false, { message: 'No email found' });
         }
-        if (!isAllowedEmailDomain(email)) {
-          return done(null, false, { message: 'Email domain not allowed' });
-        }
+        
         let user = await User.findOne({ email });
         if (!user) {
           user = await User.create({

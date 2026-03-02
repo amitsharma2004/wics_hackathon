@@ -31,6 +31,11 @@ export const createDriver = async (req: Request, res: Response) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
+    // Check if user is admin
+    if (user.role === 'admin') {
+      return res.status(403).json({ message: 'Admins cannot become drivers' });
+    }
+
     // Check if driver profile already exists
     const existingDriver = await Driver.findOne({ user: userId });
     if (existingDriver) {

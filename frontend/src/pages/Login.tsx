@@ -37,6 +37,7 @@ export default function Login() {
       
       localStorage.setItem('accessToken', data.accessToken);
       localStorage.setItem('refreshToken', data.refreshToken);
+      
       toast.success('Login successful! Redirecting...');
       setTimeout(() => {
         navigate('/dashboard');
