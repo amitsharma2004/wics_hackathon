@@ -37,9 +37,14 @@ class SocketService {
    * Initialize Socket.IO server
    */
   initialize(httpServer: HTTPServer) {
+    const allowedOrigins = [
+      process.env.FRONTEND_URL || 'http://localhost:5173',
+      'http://localhost:5173' // Always allow localhost for development
+    ].filter(Boolean);
+
     this.io = new SocketIOServer(httpServer, {
       cors: {
-        origin: 'http://localhost:5173',
+        origin: allowedOrigins,
         credentials: true,
         methods: ['GET', 'POST']
       }

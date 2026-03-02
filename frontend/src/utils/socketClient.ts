@@ -1,6 +1,5 @@
 import { io, Socket } from 'socket.io-client';
-
-const SOCKET_URL = 'http://localhost:3000';
+import { SOCKET_URL } from '../config/api';
 
 class SocketClient {
   private socket: Socket | null = null;

@@ -6,7 +6,9 @@
     "dev": "nodemon --exec node --import tsx src/index.ts",
     "start": "node --import tsx src/index.ts",
     "build": "tsc",
-    "prod": "node dist/index.js"
+    "prod": "node dist/index.js",
+    "postinstall": "npm run build",
+    "generate-secrets": "node scripts/generate-secrets.js"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",

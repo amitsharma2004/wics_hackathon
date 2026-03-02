@@ -65,10 +65,8 @@ export default function Dashboard() {
   const [routeInfo, setRouteInfo] = useState<{ distance: number; duration: number } | null>(null);
   const [routeError, setRouteError] = useState<string>('');
   const [nearbyDrivers, setNearbyDrivers] = useState<any[]>([]);
-  const [currentH3Cell, setCurrentH3Cell] = useState<string>('');
   const [rideRequestStatus, setRideRequestStatus] = useState<'idle' | 'sending' | 'waiting' | 'accepted' | 'expired'>('idle');
   const [acceptedDriver, setAcceptedDriver] = useState<any>(null);
-  const [requestId, setRequestId] = useState<string>('');
   const MAX_DISTANCE_KM = 100; // Maximum allowed distance in kilometers
 
   // Use contexts and hooks
@@ -106,36 +104,56 @@ export default function Dashboard() {
     }
   }, [isConnected, onRideAccepted, onRideRequestExpired, toast]);
 
-  const successHandler = async (position: GeolocationPosition) => {
-    const { latitude, longitude } = position.coords;
-    setCurrentLocation([latitude, longitude]);
-    fetchAddress(latitude, longitude);
-    setLocationPermission('granted');
+  // Real-time location tracking with watchPosition
+  useEffect(() => {
+    if (!navigator.geolocation) return;
     
-    // Handle location update with H3 logic
-    const result = await handleLocationUpdate(latitude, longitude, user?.role || 'rider');
-    
-    setCurrentH3Cell(result.h3Cell);
-    setNearbyDrivers(result.nearbyDrivers);
-    
-    if (result.nearbyDrivers.length > 0) {
-      toast.success(`Found ${result.nearbyDrivers.length} drivers nearby`);
-    }
-    
-    console.log('Location processed:', {
-      h3Cell: result.h3Cell,
-      cellChanged: result.cellChanged,
-      locationUpdated: result.locationUpdated,
-      driversFound: result.nearbyDrivers.length
-    });
-    
-    // Register user with socket if connected
-    if (isConnected) {
-      registerUser('rider', [longitude, latitude]);
-    }
-    
-    setLoading(false);
-  };
+    // Only start watching if location permission is granted
+    if (locationPermission !== 'granted') return;
+
+    const watchId = navigator.geolocation.watchPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        
+        // Update local state for the Map UI
+        setCurrentLocation([latitude, longitude]);
+        fetchAddress(latitude, longitude);
+        
+        // Trigger H3 + Socket + Redis logic
+        const result = await handleLocationUpdate(latitude, longitude, user?.role || 'rider');
+        
+        setNearbyDrivers(result.nearbyDrivers);
+        
+        // Only show toast on cell change to avoid spam
+        if (result.cellChanged && result.nearbyDrivers.length > 0) {
+          toast.info(`Found ${result.nearbyDrivers.length} drivers nearby`);
+        }
+        
+        console.log('Location updated:', {
+          h3Cell: result.h3Cell,
+          cellChanged: result.cellChanged,
+          locationUpdated: result.locationUpdated,
+          driversFound: result.nearbyDrivers.length
+        });
+        
+        // Register user with socket if connected (only on first update)
+        if (isConnected && !currentLocation) {
+          registerUser('rider', [longitude, latitude]);
+        }
+      },
+      (error) => {
+        console.error('GPS Error:', error);
+        toast.error('Failed to update location');
+      },
+      {
+        enableHighAccuracy: true, // Crucial for OSRM routing accuracy
+        timeout: 5000,
+        maximumAge: 0 // Ensure we don't get "cached" old locations
+      }
+    );
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [locationPermission, user?.role, isConnected, handleLocationUpdate, registerUser, toast, currentLocation]);
 
   const errorHandler = (error: GeolocationPositionError) => {
     console.error('Error getting location:', error);
@@ -145,7 +163,7 @@ export default function Dashboard() {
     setLoading(false);
   };
 
-  const getLocation = async () => {
+  const getInitialLocation = async () => {
     if (!navigator.geolocation) {
       setCurrentLocation([28.6139, 77.2090]);
       setPickupAddress('Geolocation not supported - Using default location');
@@ -156,10 +174,56 @@ export default function Dashboard() {
     const permission = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
 
     if (permission.state === 'granted') {
-      navigator.geolocation.getCurrentPosition(successHandler, errorHandler);
+      setLocationPermission('granted');
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          setCurrentLocation([latitude, longitude]);
+          fetchAddress(latitude, longitude);
+          
+          // Initial location update
+          const result = await handleLocationUpdate(latitude, longitude, user?.role || 'rider');
+          setNearbyDrivers(result.nearbyDrivers);
+          
+          if (result.nearbyDrivers.length > 0) {
+            toast.success(`Found ${result.nearbyDrivers.length} drivers nearby`);
+          }
+          
+          // Register user with socket if connected
+          if (isConnected) {
+            registerUser('rider', [longitude, latitude]);
+          }
+          
+          setLoading(false);
+        },
+        errorHandler
+      );
     } else if (permission.state === 'prompt') {
       // call it only if you actually want to trigger popup
-      navigator.geolocation.getCurrentPosition(successHandler, errorHandler);
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude } = position.coords;
+          setCurrentLocation([latitude, longitude]);
+          fetchAddress(latitude, longitude);
+          setLocationPermission('granted');
+          
+          // Initial location update
+          const result = await handleLocationUpdate(latitude, longitude, user?.role || 'rider');
+          setNearbyDrivers(result.nearbyDrivers);
+          
+          if (result.nearbyDrivers.length > 0) {
+            toast.success(`Found ${result.nearbyDrivers.length} drivers nearby`);
+          }
+          
+          // Register user with socket if connected
+          if (isConnected) {
+            registerUser('rider', [longitude, latitude]);
+          }
+          
+          setLoading(false);
+        },
+        errorHandler
+      );
     } else {
       // denied
       setLocationPermission('denied');
@@ -183,7 +247,7 @@ export default function Dashboard() {
     } catch (error) {
       console.error('Failed to update location preference:', error);
     }
-    await getLocation();
+    await getInitialLocation();
   };
 
   useEffect(() => {
@@ -201,7 +265,7 @@ export default function Dashboard() {
         const userData = await response.json();
 
         if (userData.locationPreference === 'accepted') {
-          await getLocation();
+          await getInitialLocation();
         } else {
           setLoading(false);
         }
@@ -383,7 +447,6 @@ export default function Dashboard() {
 
       if (response.ok) {
         const data = await response.json();
-        setRequestId(data.requestId);
         setRideRequestStatus('waiting');
         toast.success(`Request sent to ${data.sent} drivers`);
         console.log('Ride request sent:', data);
@@ -764,7 +827,6 @@ export default function Dashboard() {
           nearbyDriversCount={nearbyDrivers.slice(0, 5).length}
           onCancel={() => {
             setRideRequestStatus('idle');
-            setRequestId('');
           }}
         />
       )}
@@ -776,7 +838,6 @@ export default function Dashboard() {
           onContinue={() => {
             setRideRequestStatus('idle');
             setAcceptedDriver(null);
-            setRequestId('');
           }}
         />
       )}
@@ -785,7 +846,6 @@ export default function Dashboard() {
         <RideRequestExpired
           onTryAgain={() => {
             setRideRequestStatus('idle');
-            setRequestId('');
           }}
         />
       )}
