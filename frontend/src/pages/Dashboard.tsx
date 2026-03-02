@@ -3,9 +3,11 @@ import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { useLocationHandler } from '../utils/locationHandler';
-import { socketClient } from '../utils/socketClient';
 import { RideRequestWaiting, RideAccepted, RideRequestExpired, ToastContainer } from '../components';
 import { useToast } from '../hooks/useToast';
+import { useSocket } from '../contexts/SocketContext';
+import { useAuth } from '../contexts/AuthContext';
+import { useSocketInit } from '../hooks/useSocketInit';
 
 // Fix for default marker icons in React-Leaflet
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -13,6 +15,31 @@ L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
   iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
+
+// Custom car icon for nearby drivers
+const carIcon = L.divIcon({
+  className: 'custom-car-icon',
+  html: `
+    <div style="
+      background: white;
+      border: 2px solid #4F46E5;
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    ">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="#4F46E5">
+        <path d="M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z"/>
+      </svg>
+    </div>
+  `,
+  iconSize: [32, 32],
+  iconAnchor: [16, 16],
+  popupAnchor: [0, -16],
 });
 
 function MapUpdater({ center }: { center: [number, number] }) {
@@ -38,19 +65,20 @@ export default function Dashboard() {
   const [routeInfo, setRouteInfo] = useState<{ distance: number; duration: number } | null>(null);
   const [routeError, setRouteError] = useState<string>('');
   const [nearbyDrivers, setNearbyDrivers] = useState<any[]>([]);
-  const [userRole, setUserRole] = useState<'rider' | 'driver' | 'both' | 'admin'>('rider');
   const [currentH3Cell, setCurrentH3Cell] = useState<string>('');
-  const [socketConnected, setSocketConnected] = useState(false);
   const [rideRequestStatus, setRideRequestStatus] = useState<'idle' | 'sending' | 'waiting' | 'accepted' | 'expired'>('idle');
   const [acceptedDriver, setAcceptedDriver] = useState<any>(null);
   const [requestId, setRequestId] = useState<string>('');
   const MAX_DISTANCE_KM = 100; // Maximum allowed distance in kilometers
 
-  // Initialize location handler
-  const { handleLocationUpdate, initializeFromStorage } = useLocationHandler();
-  
-  // Initialize toast notifications
+  // Use contexts and hooks
   const toast = useToast();
+  const { handleLocationUpdate, initializeFromStorage } = useLocationHandler();
+  const { user } = useAuth();
+  const { isConnected, registerUser, onRideAccepted, onRideRequestExpired } = useSocket();
+  
+  // Auto-initialize socket
+  useSocketInit();
 
   // Initialize from localStorage on mount
   useEffect(() => {
@@ -60,54 +88,23 @@ export default function Dashboard() {
     }
   }, [initializeFromStorage]);
 
-  // Fetch user profile and initialize socket
+  // Setup socket listeners when connected
   useEffect(() => {
-    const fetchUserProfile = async () => {
-      try {
-        const response = await fetch('http://localhost:3000/api/users/me', {
-          credentials: 'include'
-        });
-        if (response.ok) {
-          const userData = await response.json();
-          setUserRole(userData.role || 'rider');
-          
-          // Initialize socket connection
-          const token = document.cookie
-            .split('; ')
-            .find(row => row.startsWith('accessToken='))
-            ?.split('=')[1];
-          
-          if (token) {
-            socketClient.connect(token);
-            setSocketConnected(true);
-            toast.success('Connected to server');
-            
-            // Setup socket listeners
-            socketClient.onRideAccepted((data) => {
-              console.log('Ride accepted by driver:', data);
-              setRideRequestStatus('accepted');
-              setAcceptedDriver(data);
-              toast.success(`${data.driverName} accepted your ride!`);
-            });
-            
-            socketClient.onRideRequestExpired((data) => {
-              console.log('Ride request expired:', data);
-              setRideRequestStatus('expired');
-              toast.warning('No drivers available. Please try again.');
-            });
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching user profile:', error);
-        toast.error('Failed to connect to server');
-      }
-    };
-    fetchUserProfile();
-    
-    return () => {
-      socketClient.disconnect();
-    };
-  }, []);
+    if (isConnected) {
+      onRideAccepted((data) => {
+        console.log('Ride accepted by driver:', data);
+        setRideRequestStatus('accepted');
+        setAcceptedDriver(data);
+        toast.success(`${data.driverName} accepted your ride!`);
+      });
+      
+      onRideRequestExpired((data) => {
+        console.log('Ride request expired:', data);
+        setRideRequestStatus('expired');
+        toast.warning('No drivers available. Please try again.');
+      });
+    }
+  }, [isConnected, onRideAccepted, onRideRequestExpired, toast]);
 
   const successHandler = async (position: GeolocationPosition) => {
     const { latitude, longitude } = position.coords;
@@ -116,7 +113,7 @@ export default function Dashboard() {
     setLocationPermission('granted');
     
     // Handle location update with H3 logic
-    const result = await handleLocationUpdate(latitude, longitude, userRole);
+    const result = await handleLocationUpdate(latitude, longitude, user?.role || 'rider');
     
     setCurrentH3Cell(result.h3Cell);
     setNearbyDrivers(result.nearbyDrivers);
@@ -133,8 +130,8 @@ export default function Dashboard() {
     });
     
     // Register user with socket if connected
-    if (socketConnected) {
-      socketClient.registerUser(userRole, [longitude, latitude]);
+    if (isConnected) {
+      registerUser('rider', [longitude, latitude]);
     }
     
     setLoading(false);
@@ -505,6 +502,42 @@ export default function Dashboard() {
             opacity={0.7}
           />
         )}
+
+        {/* Nearby Driver Markers */}
+        {nearbyDrivers.map((driverData, index) => {
+          const driver = driverData.driver;
+          const coords = driver.currentLocation?.coordinates;
+          
+          if (!coords || coords.length !== 2) return null;
+          
+          // Leaflet expects [lat, lng], but MongoDB stores [lng, lat]
+          const position: [number, number] = [coords[1], coords[0]];
+          
+          return (
+            <Marker 
+              key={driver._id || index} 
+              position={position}
+              icon={carIcon}
+            >
+              <Popup>
+                <div className="text-sm">
+                  <p className="font-semibold">{driver.user?.name || 'Driver'}</p>
+                  <p className="text-gray-600">{driver.vehicle?.model || 'Vehicle'}</p>
+                  <p className="text-gray-600">{driver.vehicle?.type || 'Type'}</p>
+                  <p className="text-indigo-600 font-medium">
+                    {driverData.distance ? `${(driverData.distance / 1000).toFixed(1)} km away` : ''}
+                  </p>
+                  {driverData.eta && (
+                    <p className="text-green-600 font-medium">{driverData.eta} min ETA</p>
+                  )}
+                  <p className="text-xs text-gray-500 mt-1">
+                    ⭐ {driver.averageRating?.toFixed(1) || '0.0'} ({driver.totalRides || 0} rides)
+                  </p>
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
       </MapContainer>
 
       {/* Top Bar */}

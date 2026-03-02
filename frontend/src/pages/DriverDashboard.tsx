@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
-import { socketClient } from '../utils/socketClient';
+import { useState, useEffect, useRef } from 'react';
 import { ToastContainer } from '../components';
 import { useToast } from '../hooks/useToast';
+import { useDriver } from '../contexts/DriverContext';
+import { useSocket } from '../contexts/SocketContext';
+import { useSocketInit } from '../hooks/useSocketInit';
 
 interface RideRequest {
   requestId: string;
@@ -21,80 +23,53 @@ interface RideRequest {
 }
 
 export default function DriverDashboard() {
-  const [isOnline, setIsOnline] = useState(false);
-  const [isAvailable, setIsAvailable] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<[number, number] | null>(null);
-  const [socketConnected, setSocketConnected] = useState(false);
   const [incomingRequest, setIncomingRequest] = useState<RideRequest | null>(null);
   const [requestTimer, setRequestTimer] = useState<number>(0);
-  const [driverProfile, setDriverProfile] = useState<any>(null);
+  const hasRegistered = useRef(false);
   
-  // Initialize toast notifications
+  // Use contexts
   const toast = useToast();
+  const { driverProfile, loading: driverLoading, updateDriverStatus, updateDriverLocation } = useDriver();
+  const { isConnected, registerUser, updateLocation, onRideRequest, acceptRide, rejectRide, onRideAcceptSuccess, onRideAcceptFailed, onRideRequestCancelled, socketId } = useSocket();
+  
+  // Auto-initialize socket connection
+  useSocketInit();
+  
+  // Derived state from driver profile
+  const isOnline = driverProfile?.isOnline || false;
+  const isAvailable = driverProfile?.isAvailable || false;
 
   // Initialize socket and fetch driver profile
   useEffect(() => {
-    const initializeDriver = async () => {
-      try {
-        // Fetch driver profile
-        const response = await fetch('http://localhost:3000/api/drivers/me', {
-          credentials: 'include'
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          setDriverProfile(data);
-          setIsOnline(data.isOnline);
-          setIsAvailable(data.isAvailable);
-        }
-
-        // Initialize socket
-        const token = document.cookie
-          .split('; ')
-          .find(row => row.startsWith('accessToken='))
-          ?.split('=')[1];
-        
-        if (token) {
-          socketClient.connect(token);
-          setSocketConnected(true);
-          
-          // Setup socket listeners
-          socketClient.onRideRequest((request: RideRequest) => {
-            console.log('Incoming ride request:', request);
-            setIncomingRequest(request);
-            setRequestTimer(request.expiresIn);
-            toast.info('New ride request received!');
-          });
-          
-          socketClient.onRideAcceptSuccess((data) => {
-            console.log('Ride accepted successfully:', data);
-            setIncomingRequest(null);
-            toast.success('Ride accepted successfully!');
-          });
-          
-          socketClient.onRideAcceptFailed((data) => {
-            console.log('Ride accept failed:', data);
-            toast.error('Failed to accept ride: ' + data.message);
-            setIncomingRequest(null);
-          });
-          
-          socketClient.onRideRequestCancelled((data) => {
-            console.log('Ride request cancelled:', data);
-            toast.warning('Ride request was cancelled');
-            setIncomingRequest(null);
-          });
-        }
-      } catch (error) {
-        console.error('Error initializing driver:', error);
-      }
-    };
-
-    initializeDriver();
-
-    return () => {
-      socketClient.disconnect();
-    };
-  }, []);
+    if (isConnected) {
+      // Setup socket listeners
+      onRideRequest((request: RideRequest) => {
+        console.log('Incoming ride request:', request);
+        setIncomingRequest(request);
+        setRequestTimer(request.expiresIn);
+        toast.info('New ride request received!');
+      });
+      
+      onRideAcceptSuccess((data) => {
+        console.log('Ride accepted successfully:', data);
+        setIncomingRequest(null);
+        toast.success('Ride accepted successfully!');
+      });
+      
+      onRideAcceptFailed((data) => {
+        console.log('Ride accept failed:', data);
+        toast.error('Failed to accept ride: ' + data.message);
+        setIncomingRequest(null);
+      });
+      
+      onRideRequestCancelled((data) => {
+        console.log('Ride request cancelled:', data);
+        toast.warning('Ride request was cancelled');
+        setIncomingRequest(null);
+      });
+    }
+  }, [isConnected, onRideRequest, onRideAcceptSuccess, onRideAcceptFailed, onRideRequestCancelled, toast]);
 
   // Timer countdown for ride request
   useEffect(() => {
@@ -128,12 +103,18 @@ export default function DriverDashboard() {
     }
   }, []);
 
-  // Register with socket when going online
+  // Register with socket when going online (only once per session)
   useEffect(() => {
-    if (socketConnected && isOnline && currentLocation) {
-      socketClient.registerUser('driver', [currentLocation[1], currentLocation[0]]);
+    if (isConnected && isOnline && currentLocation && !hasRegistered.current) {
+      registerUser('driver', [currentLocation[1], currentLocation[0]]);
+      hasRegistered.current = true;
     }
-  }, [socketConnected, isOnline, currentLocation]);
+    
+    // Reset registration flag when going offline
+    if (!isOnline && hasRegistered.current) {
+      hasRegistered.current = false;
+    }
+  }, [isConnected, isOnline, currentLocation, registerUser]);
 
   // Update location periodically
   useEffect(() => {
@@ -147,20 +128,14 @@ export default function DriverDashboard() {
             setCurrentLocation([latitude, longitude]);
             
             // Update location in backend
-            await fetch('http://localhost:3000/api/drivers/location', {
-              method: 'PATCH',
-              headers: {
-                'Content-Type': 'application/json'
-              },
-              credentials: 'include',
-              body: JSON.stringify({
-                coordinates: [longitude, latitude],
-                socketId: socketClient.getSocket()?.id
-              })
-            });
+            try {
+              await updateDriverLocation([longitude, latitude], socketId || undefined);
+            } catch (error) {
+              console.error('Error updating location:', error);
+            }
 
             // Update via socket
-            socketClient.updateLocation([longitude, latitude]);
+            updateLocation([longitude, latitude]);
           },
           (error) => {
             console.error('Error updating location:', error);
@@ -170,30 +145,12 @@ export default function DriverDashboard() {
     }, 10000); // Update every 10 seconds
 
     return () => clearInterval(interval);
-  }, [isOnline, currentLocation]);
+  }, [isOnline, currentLocation, updateDriverLocation, updateLocation, socketId]);
 
   const toggleOnlineStatus = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/drivers/status', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          isOnline: !isOnline,
-          isAvailable: !isOnline
-        })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setIsOnline(data.isOnline);
-        setIsAvailable(data.isAvailable);
-        toast.success(data.isOnline ? 'You are now online' : 'You are now offline');
-      } else {
-        toast.error('Failed to update status');
-      }
+      await updateDriverStatus(!isOnline, !isOnline);
+      toast.success(isOnline ? 'You are now offline' : 'You are now online');
     } catch (error) {
       console.error('Error toggling status:', error);
       toast.error('Failed to update status');
@@ -202,16 +159,24 @@ export default function DriverDashboard() {
 
   const handleAcceptRide = () => {
     if (incomingRequest) {
-      socketClient.acceptRide(incomingRequest.requestId);
+      acceptRide(incomingRequest.requestId);
     }
   };
 
   const handleRejectRide = () => {
     if (incomingRequest) {
-      socketClient.rejectRide(incomingRequest.requestId);
+      rejectRide(incomingRequest.requestId);
       setIncomingRequest(null);
     }
   };
+
+  if (driverLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -242,7 +207,7 @@ export default function DriverDashboard() {
             <div>
               <h2 className="text-xl font-bold text-gray-900">Status</h2>
               <p className="text-sm text-gray-500">
-                {socketConnected ? 'Connected' : 'Disconnected'}
+                {isConnected ? 'Connected' : 'Disconnected'}
               </p>
             </div>
             <button

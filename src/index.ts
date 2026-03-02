@@ -51,6 +51,14 @@ app.get('/', (req: Request, res: Response) => {
   res.json({ message: 'API is running' });
 });
 
+app.get('/health', (req: Request, res: Response) => {
+  res.status(200).json({ 
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
 app.use('/api/users', userRoutes);
 
 import rideRoutes from './modules/ride/ride.routes.js';

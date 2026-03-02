@@ -108,7 +108,7 @@ export default function Profile() {
         </div>
 
         {/* Become a Driver Card */}
-        {user?.role !== 'driver' && user?.role !== 'both' && (
+        {user?.role !== 'driver' && user?.role !== 'both' && user?.role !== 'admin' && (
           <div className="bg-white rounded-xl border-2 border-indigo-200 p-6 animate-fadeIn">
             <div className="flex items-start gap-4">
               <div className="w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center flex-shrink-0">
