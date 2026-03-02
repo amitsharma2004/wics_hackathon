@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, Polyline } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -105,20 +105,37 @@ export default function Dashboard() {
     }
   }, [isConnected, onRideAccepted, onRideRequestExpired, toast]);
 
-  // Real-time location tracking with watchPosition
+  // Real-time location tracking with watchPosition (debounced)
   useEffect(() => {
     if (!navigator.geolocation) return;
     
     // Only start watching if location permission is granted
     if (locationPermission !== 'granted') return;
 
+    let debounceTimer: ReturnType<typeof setTimeout>;
+    let lastUpdateTime = 0;
+    const UPDATE_INTERVAL = 10000; // Update every 10 seconds minimum
+
     const watchId = navigator.geolocation.watchPosition(
       async (position) => {
         const { latitude, longitude } = position.coords;
+        const now = Date.now();
+        
+        // Debounce: Only update if 10 seconds have passed since last update
+        if (now - lastUpdateTime < UPDATE_INTERVAL) {
+          return;
+        }
+        
+        lastUpdateTime = now;
         
         // Update local state for the Map UI
         setCurrentLocation([latitude, longitude]);
-        fetchAddress(latitude, longitude);
+        
+        // Debounce address fetching to avoid rate limiting
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          fetchAddress(latitude, longitude);
+        }, 2000);
         
         // Trigger H3 + Socket + Redis logic
         const result = await handleLocationUpdate(latitude, longitude, user?.role || 'rider');
@@ -147,13 +164,16 @@ export default function Dashboard() {
         toast.error('Failed to update location');
       },
       {
-        enableHighAccuracy: true, // Crucial for OSRM routing accuracy
+        enableHighAccuracy: true,
         timeout: 5000,
-        maximumAge: 0 // Ensure we don't get "cached" old locations
+        maximumAge: 10000 // Allow 10 second old positions to reduce GPS polling
       }
     );
 
-    return () => navigator.geolocation.clearWatch(watchId);
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+      clearTimeout(debounceTimer);
+    };
   }, [locationPermission, user?.role, isConnected, handleLocationUpdate, registerUser, toast, currentLocation]);
 
   const errorHandler = (error: GeolocationPositionError) => {
@@ -279,15 +299,59 @@ export default function Dashboard() {
     checkLocationAccess();
   }, []);
 
+  // Cache for addresses to avoid rate limiting
+  const addressCacheRef = useRef<Map<string, { address: string; timestamp: number }>>(new Map());
+  const CACHE_DURATION = 300000; // 5 minutes
+
   const fetchAddress = async (lat: number, lng: number) => {
+    // Round coordinates to 4 decimal places for caching (about 11 meters precision)
+    const cacheKey = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+    const now = Date.now();
+    
+    // Check cache first
+    const cached = addressCacheRef.current.get(cacheKey);
+    if (cached && (now - cached.timestamp) < CACHE_DURATION) {
+      setPickupAddress(cached.address);
+      return;
+    }
+    
     try {
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`,
+        {
+          headers: {
+            'User-Agent': 'RideShareApp/1.0' // Nominatim requires User-Agent
+          }
+        }
       );
+      
+      if (!response.ok) {
+        if (response.status === 429) {
+          // Rate limited - use cached value if available, otherwise generic message
+          if (cached) {
+            setPickupAddress(cached.address);
+          } else {
+            setPickupAddress(`Location: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+          }
+          return;
+        }
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
       const data = await response.json();
-      setPickupAddress(data.display_name || 'Unknown location');
+      const address = data.display_name || 'Unknown location';
+      
+      // Cache the result
+      addressCacheRef.current.set(cacheKey, { address, timestamp: now });
+      setPickupAddress(address);
     } catch (error) {
-      setPickupAddress('Unable to fetch address');
+      console.error('Address fetch error:', error);
+      // Use cached value if available
+      if (cached) {
+        setPickupAddress(cached.address);
+      } else {
+        setPickupAddress(`Location: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+      }
     }
   };
 
