@@ -8,6 +8,7 @@ import { useToast } from '../hooks/useToast';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocketInit } from '../hooks/useSocketInit';
+import { API_ENDPOINTS } from '../config/api';
 
 // Fix for default marker icons in React-Leaflet
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -236,7 +237,7 @@ export default function Dashboard() {
   const requestLocation = async () => {
     // Update backend with accepted preference
     try {
-      await fetch('http://localhost:3000/api/users/location-access', {
+      await fetch(API_ENDPOINTS.LOCATION_ACCESS, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json'
@@ -253,7 +254,7 @@ export default function Dashboard() {
   useEffect(() => {
     const checkLocationAccess = async () => {
       try {
-        const response = await fetch('http://localhost:3000/api/users/me', {
+        const response = await fetch(API_ENDPOINTS.ME, {
           credentials: 'include'
         });
         
@@ -424,7 +425,7 @@ export default function Dashboard() {
       // Get top 5 nearest drivers
       const driverIds = nearbyDrivers.slice(0, 5).map(d => d.driver._id);
 
-      const response = await fetch('http://localhost:3000/api/rides/request', {
+      const response = await fetch(API_ENDPOINTS.RIDE_REQUEST, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

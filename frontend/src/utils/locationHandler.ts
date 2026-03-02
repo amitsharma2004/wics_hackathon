@@ -1,8 +1,9 @@
 import { useCallback, useRef } from 'react';
 import { latLngToCell } from 'h3-js';
+import { API_URL } from '../config/api';
 
 const H3_RESOLUTION = 9;
-const API_BASE_URL = 'http://localhost:3000/api';
+const API_BASE_URL = `${API_URL}/api`;
 
 interface LocationData {
   latitude: number;

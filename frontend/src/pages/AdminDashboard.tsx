@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { ToastContainer } from '../components';
 import { useToast } from '../hooks/useToast';
+import { API_ENDPOINTS } from '../config/api';
 
 interface Driver {
   _id: string;
@@ -51,8 +52,8 @@ export default function AdminDashboard() {
 
   const fetchPendingDrivers = async () => {
     try {
-      console.log('Fetching pending drivers from: http://localhost:3000/api/admin/drivers/pending');
-      const response = await fetch('http://localhost:3000/api/admin/drivers/pending', {
+      console.log('Fetching pending drivers from:', API_ENDPOINTS.ADMIN_PENDING_DRIVERS);
+      const response = await fetch(API_ENDPOINTS.ADMIN_PENDING_DRIVERS, {
         credentials: 'include'
       });
 
@@ -75,7 +76,7 @@ export default function AdminDashboard() {
 
   const handleVerifyDriver = async (driverId: string, isVerified: boolean) => {
     try {
-      const response = await fetch(`http://localhost:3000/api/admin/drivers/${driverId}/verify`, {
+      const response = await fetch(API_ENDPOINTS.ADMIN_VERIFY_DRIVER(driverId), {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json'
@@ -100,7 +101,7 @@ export default function AdminDashboard() {
 
   const handleRejectDriver = async (driverId: string) => {
     try {
-      const response = await fetch(`http://localhost:3000/api/admin/drivers/${driverId}/block`, {
+      const response = await fetch(API_ENDPOINTS.ADMIN_BLOCK_DRIVER(driverId), {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json'

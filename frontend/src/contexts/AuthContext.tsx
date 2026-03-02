@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
+import { API_ENDPOINTS } from '../config/api';
 
 interface UserProfile {
   _id: string;
@@ -35,7 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchUserProfile = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/users/me', {
+      const response = await fetch(API_ENDPOINTS.ME, {
         credentials: 'include'
       });
 
@@ -59,7 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     try {
-      await fetch('http://localhost:3000/api/users/logout', {
+      await fetch(API_ENDPOINTS.LOGOUT, {
         method: 'POST',
         credentials: 'include'
       });
