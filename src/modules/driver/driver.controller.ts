@@ -456,6 +456,7 @@ export const getNearbyDrivers = async (req: Request, res: Response) => {
 export const getNearbyDriversByH3 = async (req: Request, res: Response) => {
   try {
     const { longitude, latitude } = req.query;
+    const userId = (req as AuthRequest).userId; // Get current user ID
 
     if (!longitude || !latitude) {
       return res.status(400).json({ message: 'Longitude and latitude are required' });
@@ -464,6 +465,10 @@ export const getNearbyDriversByH3 = async (req: Request, res: Response) => {
     const lng = parseFloat(longitude as string);
     const lat = parseFloat(latitude as string);
     const maxRadius = 5; // Maximum number of rings to search
+
+    // Get current user's driver profile if they have one (for role "both")
+    const currentUserDriver = await Driver.findOne({ user: userId });
+    const currentDriverId = currentUserDriver?._id.toString();
 
     // Get H3 index for the search location
     const centerH3Index = getCell(lat, lng);
@@ -481,7 +486,12 @@ export const getNearbyDriversByH3 = async (req: Request, res: Response) => {
       
       for (const cell of cellsAtRing) {
         const driversInCell = await redis.smembers(`h3:drivers:${cell}`);
-        driversInCell.forEach(id => driverIds.add(id));
+        driversInCell.forEach(id => {
+          // Exclude current user if they are also a driver (role "both")
+          if (id !== currentDriverId) {
+            driverIds.add(id);
+          }
+        });
       }
 
       if (driverIds.size === 0) {
@@ -489,7 +499,7 @@ export const getNearbyDriversByH3 = async (req: Request, res: Response) => {
         continue;
       }
 
-      logger.info(`Found ${driverIds.size} potential drivers at ring ${k}`);
+      logger.info(`Found ${driverIds.size} potential drivers at ring ${k} (excluding self)`);
 
       // Fetch driver details
       const driversData = await Promise.all(
@@ -507,7 +517,7 @@ export const getNearbyDriversByH3 = async (req: Request, res: Response) => {
           // Fetch driver details from MongoDB
           const driver = await Driver.findById(driverId)
             .populate('user', 'name phoneNumber profileImageUrl')
-            .select('isVerified isBlocked averageRating totalRides h3Index');
+            .select('isVerified isBlocked averageRating totalRides h3Index vehicle');
 
           if (!driver || driver.isBlocked || !driver.isVerified) return null;
 
@@ -569,7 +579,7 @@ export const getNearbyDriversByH3 = async (req: Request, res: Response) => {
 
       // If we found drivers at this ring, return them
       if (validDrivers.length > 0) {
-        logger.info(`Returning ${ validDrivers.length } drivers from ring ${k}`);
+        logger.info(`Returning ${validDrivers.length} drivers from ring ${k}`);
         return res.json({
           drivers: validDrivers,
           searchRadius: k,
