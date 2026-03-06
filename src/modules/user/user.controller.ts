@@ -55,6 +55,15 @@ const generateTokens = (userId: string) => {
   return { accessToken, refreshToken };
 };
 
+// Helper function for cookie options
+const getCookieOptions = (maxAge: number) => ({
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: (process.env.NODE_ENV === 'production' ? 'none' : 'lax') as 'none' | 'lax',
+  path: '/',
+  maxAge
+});
+
 export const register = async (req: AuthRequest, res: Response) => {
   try {
     const { name, email, password } = req.body;
@@ -82,19 +91,8 @@ export const register = async (req: AuthRequest, res: Response) => {
     });
 
     // Set tokens in cookies
-    res.cookie('accessToken', accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 15 * 60 * 1000 // 15 minutes
-    });
-
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-    });
+    res.cookie('accessToken', accessToken, getCookieOptions(15 * 60 * 1000)); // 15 minutes
+    res.cookie('refreshToken', refreshToken, getCookieOptions(7 * 24 * 60 * 60 * 1000)); // 7 days
 
     res.status(201).json({ 
       accessToken, 
@@ -128,19 +126,8 @@ export const login = async (req: AuthRequest, res: Response) => {
     }
 
     // Set tokens in cookies
-    res.cookie('accessToken', accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 15 * 60 * 1000 // 15 minutes
-    });
-
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-    });
+    res.cookie('accessToken', accessToken, getCookieOptions(15 * 60 * 1000)); // 15 minutes
+    res.cookie('refreshToken', refreshToken, getCookieOptions(7 * 24 * 60 * 60 * 1000)); // 7 days
 
     res.json({ 
       accessToken, 
@@ -160,9 +147,9 @@ export const logout = async (req: AuthRequest, res: Response) => {
     // Invalidate user cache
     await invalidateUserCache(req.userId!);
     
-    // Clear cookies
-    res.clearCookie('accessToken');
-    res.clearCookie('refreshToken');
+    // Clear cookies with same options (path is important!)
+    res.clearCookie('accessToken', { path: '/' });
+    res.clearCookie('refreshToken', { path: '/' });
     
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
@@ -272,19 +259,8 @@ export const refreshToken = async (req: AuthRequest, res: Response) => {
     }
 
     // Update cookies with new tokens
-    res.cookie('accessToken', accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 15 * 60 * 1000 // 15 minutes
-    });
-
-    res.cookie('refreshToken', newRefreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-    });
+    res.cookie('accessToken', accessToken, getCookieOptions(15 * 60 * 1000)); // 15 minutes
+    res.cookie('refreshToken', newRefreshToken, getCookieOptions(7 * 24 * 60 * 60 * 1000)); // 7 days
 
     res.json({ accessToken, refreshToken: newRefreshToken });
   } catch (error) {

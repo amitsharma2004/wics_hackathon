@@ -23,7 +23,7 @@ const router = Router();
 
 // Public routes (specific paths first)
 router.get('/nearby', getNearbyDrivers);
-router.get('/nearby-h3', getNearbyDriversByH3);
+router.get('/nearby-h3', verifyToken, getNearbyDriversByH3);
 
 // Driver routes (specific paths before dynamic :id)
 router.post('/', verifyToken, validate(createDriverSchema), createDriver);

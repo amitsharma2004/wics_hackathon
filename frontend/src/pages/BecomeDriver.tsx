@@ -47,11 +47,18 @@ export default function BecomeDriver() {
     setLoading(true);
 
     try {
+      const token = localStorage.getItem('accessToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       const response = await fetch(API_ENDPOINTS.DRIVER_CREATE, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         credentials: 'include',
         body: JSON.stringify({
           licenseNumber: formData.licenseNumber.toUpperCase(),

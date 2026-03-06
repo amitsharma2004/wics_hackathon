@@ -36,8 +36,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchUserProfile = async () => {
     try {
+      const token = localStorage.getItem('accessToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       const response = await fetch(API_ENDPOINTS.ME, {
-        credentials: 'include'
+        credentials: 'include',
+        headers
       });
 
       if (response.ok) {

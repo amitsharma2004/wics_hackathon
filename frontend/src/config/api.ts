@@ -45,12 +45,21 @@ export const API_ENDPOINTS = {
 
 // Helper function to make authenticated requests
 export const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
+  const token = localStorage.getItem('accessToken');
+  
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    ...options.headers,
+  };
+  
+  // Add Authorization header if token exists
+  if (token) {
+    (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+  }
+  
   return fetch(url, {
     ...options,
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
+    headers,
   });
 };

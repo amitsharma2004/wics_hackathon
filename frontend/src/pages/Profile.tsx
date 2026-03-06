@@ -164,7 +164,7 @@ export default function Profile() {
 
           {(user?.role === 'driver' || user?.role === 'both') && (
             <button
-              onClick={() => navigate('/driver')}
+              onClick={() => navigate('/driver-dashboard')}
               className="w-full bg-indigo-600 text-white py-4 rounded-xl font-semibold hover:bg-indigo-700 transition flex items-center justify-center gap-2"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

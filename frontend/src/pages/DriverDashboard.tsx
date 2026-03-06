@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ToastContainer } from '../components';
 import { useToast } from '../hooks/useToast';
+import { useAuth } from '../contexts/AuthContext';
 import { useDriver } from '../contexts/DriverContext';
 import { useSocket } from '../contexts/SocketContext';
 import { useSocketInit } from '../hooks/useSocketInit';
@@ -23,18 +25,36 @@ interface RideRequest {
 }
 
 export default function DriverDashboard() {
-  const [currentLocation, setCurrentLocation] = useState<[number, number] | null>(null);
   const [incomingRequest, setIncomingRequest] = useState<RideRequest | null>(null);
   const [requestTimer, setRequestTimer] = useState<number>(0);
   const hasRegistered = useRef(false);
   
   // Use contexts
+  const navigate = useNavigate();
   const toast = useToast();
-  const { driverProfile, loading: driverLoading, updateDriverStatus, updateDriverLocation } = useDriver();
-  const { isConnected, registerUser, updateLocation, onRideRequest, acceptRide, rejectRide, onRideAcceptSuccess, onRideAcceptFailed, onRideRequestCancelled, socketId } = useSocket();
+  const { user, loading: authLoading, isAuthenticated } = useAuth();
+  const { driverProfile, loading: driverLoading, updateDriverStatus } = useDriver();
+  const { isConnected, registerUser, onRideRequest, acceptRide, rejectRide, onRideAcceptSuccess, onRideAcceptFailed, onRideRequestCancelled } = useSocket();
   
   // Auto-initialize socket connection
   useSocketInit();
+  
+  // Check authentication and driver role
+  useEffect(() => {
+    if (!authLoading) {
+      if (!isAuthenticated) {
+        toast.error('Please login to access driver dashboard');
+        navigate('/login');
+        return;
+      }
+
+      if (user?.role !== 'driver' && user?.role !== 'both') {
+        toast.error('You need to be a driver to access this page');
+        navigate('/dashboard');
+        return;
+      }
+    }
+  }, [authLoading, isAuthenticated, user, navigate, toast.error]);
   
   // Derived state from driver profile
   const isOnline = driverProfile?.isOnline || false;
@@ -45,31 +65,27 @@ export default function DriverDashboard() {
     if (isConnected) {
       // Setup socket listeners
       onRideRequest((request: RideRequest) => {
-        console.log('Incoming ride request:', request);
         setIncomingRequest(request);
         setRequestTimer(request.expiresIn);
         toast.info('New ride request received!');
       });
       
-      onRideAcceptSuccess((data) => {
-        console.log('Ride accepted successfully:', data);
+      onRideAcceptSuccess(() => {
         setIncomingRequest(null);
         toast.success('Ride accepted successfully!');
       });
       
       onRideAcceptFailed((data) => {
-        console.log('Ride accept failed:', data);
-        toast.error('Failed to accept ride: ' + data.message);
+        toast.error('Failed to accept ride: ' + (data?.message || 'Unknown error'));
         setIncomingRequest(null);
       });
       
-      onRideRequestCancelled((data) => {
-        console.log('Ride request cancelled:', data);
+      onRideRequestCancelled(() => {
         toast.warning('Ride request was cancelled');
         setIncomingRequest(null);
       });
     }
-  }, [isConnected, onRideRequest, onRideAcceptSuccess, onRideAcceptFailed, onRideRequestCancelled, toast]);
+  }, [isConnected, onRideRequest, onRideAcceptSuccess, onRideAcceptFailed, onRideRequestCancelled, toast.info, toast.success, toast.error, toast.warning]);
 
   // Timer countdown for ride request
   useEffect(() => {
@@ -88,71 +104,19 @@ export default function DriverDashboard() {
     }
   }, [incomingRequest, requestTimer]);
 
-  // Get current location
+  // Register with socket when going online
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
-          setCurrentLocation([latitude, longitude]);
-        },
-        (error) => {
-          console.error('Error getting location:', error);
-        }
-      );
-    }
-  }, []);
-
-  // Register with socket when going online (only once per session)
-  useEffect(() => {
-    if (isConnected && isOnline && currentLocation && !hasRegistered.current) {
-      registerUser('driver', [currentLocation[1], currentLocation[0]]);
+    if (isConnected && isOnline && !hasRegistered.current) {
+      registerUser('driver', [0, 0]); // Default coordinates
       hasRegistered.current = true;
     }
-    
-    // Reset registration flag when going offline
-    if (!isOnline && hasRegistered.current) {
-      hasRegistered.current = false;
-    }
-  }, [isConnected, isOnline, currentLocation, registerUser]);
-
-  // Update location periodically
-  useEffect(() => {
-    if (!isOnline || !currentLocation) return;
-
-    const interval = setInterval(() => {
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          async (position) => {
-            const { latitude, longitude } = position.coords;
-            setCurrentLocation([latitude, longitude]);
-            
-            // Update location in backend
-            try {
-              await updateDriverLocation([longitude, latitude], socketId || undefined);
-            } catch (error) {
-              console.error('Error updating location:', error);
-            }
-
-            // Update via socket
-            updateLocation([longitude, latitude]);
-          },
-          (error) => {
-            console.error('Error updating location:', error);
-          }
-        );
-      }
-    }, 10000); // Update every 10 seconds
-
-    return () => clearInterval(interval);
-  }, [isOnline, currentLocation, updateDriverLocation, updateLocation, socketId]);
+  }, [isConnected, isOnline, registerUser]);
 
   const toggleOnlineStatus = async () => {
     try {
       await updateDriverStatus(!isOnline, !isOnline);
       toast.success(isOnline ? 'You are now offline' : 'You are now online');
     } catch (error) {
-      console.error('Error toggling status:', error);
       toast.error('Failed to update status');
     }
   };
@@ -170,10 +134,34 @@ export default function DriverDashboard() {
     }
   };
 
-  if (driverLoading) {
+  if (authLoading || driverLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated || !user) {
+    return null; // Will redirect via useEffect
+  }
+
+  if (user.role !== 'driver' && user.role !== 'both') {
+    return null; // Will redirect via useEffect
+  }
+
+  if (!driverProfile) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600 mb-4">Driver profile not found</p>
+          <button
+            onClick={() => navigate('/become-driver')}
+            className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700"
+          >
+            Become a Driver
+          </button>
+        </div>
       </div>
     );
   }
