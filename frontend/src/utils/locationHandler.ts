@@ -69,26 +69,26 @@ export const useLocationHandler = () => {
     longitude: number
   ): Promise<boolean> => {
     try {
+      const token = localStorage.getItem('accessToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       const response = await fetch(`${API_BASE_URL}/users/location`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         credentials: 'include',
         body: JSON.stringify({
           coordinates: [longitude, latitude]
         })
       });
 
-      if (response.ok) {
-        console.log('Location updated in backend');
-        return true;
-      } else {
-        console.error('Failed to update location in backend');
-        return false;
-      }
+      return response.ok;
     } catch (error) {
-      console.error('Error updating location in backend:', error);
       return false;
     }
   }, []);
@@ -101,23 +101,30 @@ export const useLocationHandler = () => {
     longitude: number
   ): Promise<NearbyDriver[]> => {
     try {
+      const token = localStorage.getItem('accessToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       const response = await fetch(
         `${API_BASE_URL}/drivers/nearby-h3?latitude=${latitude}&longitude=${longitude}`,
         {
-          credentials: 'include'
+          credentials: 'include',
+          headers
         }
       );
 
       if (response.ok) {
         const data = await response.json();
-        console.log(`Found ${data.drivers?.length || 0} nearby drivers at ring ${data.searchRadius}`);
         return data.drivers || [];
       } else {
-        console.error('Failed to fetch nearby drivers');
         return [];
       }
     } catch (error) {
-      console.error('Error fetching nearby drivers:', error);
       return [];
     }
   }, []);
@@ -146,7 +153,6 @@ export const useLocationHandler = () => {
 
     // If cell changed, update backend
     if (cellChanged) {
-      console.log('H3 cell changed, updating backend...');
       locationUpdated = await updateLocationInBackend(latitude, longitude);
 
       // Update reference
@@ -160,13 +166,10 @@ export const useLocationHandler = () => {
         timestamp: Date.now()
       };
       saveToLocalStorage(locationData);
-    } else {
-      console.log('H3 cell unchanged, skipping backend update');
     }
 
     // For riders, always fetch nearby drivers (even if cell hasn't changed)
     if (userRole === 'rider' || userRole === 'both') {
-      console.log('Fetching nearby drivers for rider...');
       nearbyDrivers = await fetchNearbyDrivers(latitude, longitude);
     }
 

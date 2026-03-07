@@ -53,8 +53,18 @@ export default function AdminDashboard() {
   const fetchPendingDrivers = async () => {
     try {
       console.log('Fetching pending drivers from:', API_ENDPOINTS.ADMIN_PENDING_DRIVERS);
+      const token = localStorage.getItem('accessToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       const response = await fetch(API_ENDPOINTS.ADMIN_PENDING_DRIVERS, {
-        credentials: 'include'
+        credentials: 'include',
+        headers
       });
 
       if (response.ok) {
@@ -76,11 +86,18 @@ export default function AdminDashboard() {
 
   const handleVerifyDriver = async (driverId: string, isVerified: boolean) => {
     try {
+      const token = localStorage.getItem('accessToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       const response = await fetch(API_ENDPOINTS.ADMIN_VERIFY_DRIVER(driverId), {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         credentials: 'include',
         body: JSON.stringify({ isVerified })
       });
@@ -101,11 +118,18 @@ export default function AdminDashboard() {
 
   const handleRejectDriver = async (driverId: string) => {
     try {
+      const token = localStorage.getItem('accessToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       const response = await fetch(API_ENDPOINTS.ADMIN_BLOCK_DRIVER(driverId), {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         credentials: 'include',
         body: JSON.stringify({ 
           isBlocked: true,

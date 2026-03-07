@@ -78,8 +78,18 @@ export const DriverProvider = ({ children }: DriverProviderProps) => {
     setError(null);
 
     try {
+      const token = localStorage.getItem('accessToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       const response = await fetch(API_ENDPOINTS.DRIVER_ME, {
-        credentials: 'include'
+        credentials: 'include',
+        headers
       });
 
       if (response.ok) {
@@ -100,11 +110,18 @@ export const DriverProvider = ({ children }: DriverProviderProps) => {
   // Update driver status (online/available)
   const updateDriverStatus = useCallback(async (isOnline: boolean, isAvailable: boolean) => {
     try {
+      const token = localStorage.getItem('accessToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       const response = await fetch(API_ENDPOINTS.DRIVER_STATUS, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         credentials: 'include',
         body: JSON.stringify({ isOnline, isAvailable })
       });
@@ -130,11 +147,18 @@ export const DriverProvider = ({ children }: DriverProviderProps) => {
   // Update driver location
   const updateDriverLocation = useCallback(async (coordinates: [number, number], socketId?: string) => {
     try {
+      const token = localStorage.getItem('accessToken');
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json'
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
       const response = await fetch(API_ENDPOINTS.DRIVER_LOCATION, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         credentials: 'include',
         body: JSON.stringify({
           coordinates,
