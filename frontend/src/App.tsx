@@ -9,6 +9,7 @@ import Profile from './pages/Profile';
 import DriverDashboard from './pages/DriverDashboard';
 import BecomeDriver from './pages/BecomeDriver';
 import AdminDashboard from './pages/AdminDashboard';
+import OAuthCallback from './pages/OAuthCallback';
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
               <Route path="/" element={<Navigate to="/login" replace />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
+              <Route path="/auth/callback" element={<OAuthCallback />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/driver-dashboard" element={<DriverDashboard />} />
               <Route path="/become-driver" element={<BecomeDriver />} />
