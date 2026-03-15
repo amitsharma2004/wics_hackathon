@@ -121,9 +121,12 @@ export default function Dashboard() {
       const data = await res.json();
       const drivers = data.drivers || [];
       setNearbyDrivers(drivers);
-      if (drivers.length > 0) toast.success(`${drivers.length} drivers nearby`);
+      
+      if (drivers.length > 0) {
+        toast.success(`${drivers.length} drivers nearby`);
+      }
     } catch {
-      // Silent fail — not critical
+      // Silent fail
     }
   };
 
@@ -238,6 +241,10 @@ export default function Dashboard() {
     const destLng = parseFloat(suggestion.lon);
     setDestinationCoords([destLat, destLng]);
     await fetchRoute(currentLocation, [destLat, destLng]);
+    
+    // Refetch nearby drivers after destination is selected
+    // By now, drivers should be cached in Redis from initial load
+    await fetchNearbyDrivers(currentLocation[0], currentLocation[1]);
   };
 
   const fetchRoute = async (pickup: [number, number], dest: [number, number]) => {
@@ -278,6 +285,10 @@ export default function Dashboard() {
     if (!destination.trim()) return toast.warning('Please enter a destination');
     if (routeError) return toast.error('Cannot book: ' + routeError);
     if (!routeInfo || !destinationCoords) return toast.warning('Please select a destination from the list');
+    
+    // Refetch nearby drivers one more time before booking
+    await fetchNearbyDrivers(currentLocation[0], currentLocation[1]);
+    
     if (nearbyDrivers.length === 0) return toast.error('No drivers available in your area');
 
     setRideRequestStatus('sending');
